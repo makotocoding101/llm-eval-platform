@@ -1,0 +1,25 @@
+{
+  "name": "llm-eval-platform",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "dev:api": "pnpm --filter @llm-eval/api dev",
+    "dev:web": "pnpm --filter @llm-eval/web dev",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:generate": "pnpm --filter @llm-eval/db generate",
+    "db:migrate": "pnpm --filter @llm-eval/db migrate",
+    "db:seed": "pnpm --filter @llm-eval/db seed",
+    "db:studio": "pnpm --filter @llm-eval/db studio",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

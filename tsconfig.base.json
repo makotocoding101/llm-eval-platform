@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@llm-eval/shared": ["packages/shared/src/index.ts"],
+      "@llm-eval/shared/*": ["packages/shared/src/*"],
+      "@llm-eval/db": ["packages/db/src/index.ts"],
+      "@llm-eval/db/*": ["packages/db/src/*"]
+    }
+  }
+}
