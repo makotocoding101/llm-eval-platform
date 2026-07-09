@@ -13,6 +13,11 @@ interface AnthropicResponse {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Models that rejected adaptive thinking (pre-4.6 models like Haiku 4.5 only support
+// the older budget_tokens style). Learned at runtime from the API's 400 rather than a
+// hand-maintained capability table; judge calls work fine without thinking there.
+export const modelsWithoutAdaptiveThinking = new Set<string>();
+
 /**
  * Anthropic (Claude) — the independent judge. Calls the Messages API directly (no SDK).
  * Judge calls pass `jsonSchema` for structured per-criterion scores via output_config.format.
@@ -28,10 +33,12 @@ export class AnthropicProvider implements CompletionProvider {
     const body: Record<string, unknown> = {
       model: req.model,
       max_tokens: req.maxTokens ?? 16000,
-      // Adaptive thinking: Claude decides when/how much to reason — helps judge quality.
-      thinking: { type: "adaptive" },
       messages: [{ role: "user", content: req.prompt }],
     };
+    // Adaptive thinking: Claude decides when/how much to reason — helps judge quality.
+    if (!modelsWithoutAdaptiveThinking.has(req.model)) {
+      body.thinking = { type: "adaptive" };
+    }
     if (req.system) body.system = req.system;
     if (req.jsonSchema) {
       // Structured output — standard JSON Schema, exactly as buildJudgePrompt emits it.
@@ -62,6 +69,18 @@ export class AnthropicProvider implements CompletionProvider {
       }
       json = (await res.json()) as AnthropicResponse;
       if (res.ok) break;
+      // Pre-4.6 models (e.g. Haiku 4.5) reject adaptive thinking with a 400 — drop the
+      // field, remember the model, and retry immediately (doesn't consume an attempt).
+      if (
+        res.status === 400 &&
+        "thinking" in body &&
+        /thinking is not supported/i.test(json.error?.message ?? "")
+      ) {
+        modelsWithoutAdaptiveThinking.add(req.model);
+        delete body.thinking;
+        attempt--;
+        continue;
+      }
       // 429 rate limit / 529 overloaded are retryable; honor retry-after when present.
       if ((res.status === 429 || res.status === 529) && attempt < MAX_ATTEMPTS) {
         const retryAfter = Number(res.headers.get("retry-after"));

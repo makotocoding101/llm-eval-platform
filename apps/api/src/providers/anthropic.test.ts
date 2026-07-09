@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AnthropicProvider } from "./anthropic";
+import { AnthropicProvider, modelsWithoutAdaptiveThinking } from "./anthropic";
 
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return {
@@ -21,7 +21,10 @@ const success = jsonResponse(200, {
 });
 
 describe("AnthropicProvider", () => {
-  beforeEach(() => vi.stubEnv("ANTHROPIC_API_KEY", "test-key"));
+  beforeEach(() => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    modelsWithoutAdaptiveThinking.clear();
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
@@ -108,6 +111,32 @@ describe("AnthropicProvider", () => {
     await expect(
       new AnthropicProvider().complete({ model: "claude-opus-4-8", prompt: "hi" }),
     ).rejects.toThrow(/refusal/);
+  });
+
+  it("drops adaptive thinking and retries when the model rejects it (e.g. Haiku 4.5)", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse(400, { error: { message: "adaptive thinking is not supported on this model" } }),
+      )
+      .mockResolvedValue(success);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new AnthropicProvider();
+    const result = await provider.complete({ model: "claude-haiku-4-5-20251001", prompt: "judge" });
+    expect(result.text).toContain("scores");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const firstBody = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    const retryBody = JSON.parse(fetchMock.mock.calls[1]![1]!.body as string);
+    expect(firstBody.thinking).toEqual({ type: "adaptive" });
+    expect(retryBody.thinking).toBeUndefined();
+
+    // The model is remembered — the next call skips thinking from the start.
+    await provider.complete({ model: "claude-haiku-4-5-20251001", prompt: "judge again" });
+    const thirdBody = JSON.parse(fetchMock.mock.calls[2]![1]!.body as string);
+    expect(thirdBody.thinking).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("aborts a hung request and reports the timeout", async () => {
