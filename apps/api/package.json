@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
+    "spotcheck": "tsx src/spotcheck/cli.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
