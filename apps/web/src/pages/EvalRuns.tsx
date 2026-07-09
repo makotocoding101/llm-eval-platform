@@ -38,11 +38,14 @@ export function EvalRuns() {
         api.rubrics(),
       ]);
       const candidates = models.filter((m) => m.kind === "candidate" && m.enabled);
-      // Interim judge: the enabled Gemini model (Claude judge lands once its adapter is wired).
-      const judge = models.find((m) => m.enabled && m.apiName.startsWith("gemini"));
+      // Prefer the dedicated judge model (Claude — independent, not a candidate);
+      // fall back to Gemini only while the judge model is disabled.
+      const judge =
+        models.find((m) => m.enabled && m.kind === "judge") ??
+        models.find((m) => m.enabled && m.apiName.startsWith("gemini"));
       const rubric = rubrics[0];
       if (candidates.length === 0 || !judge || !rubric || tasks.length === 0) {
-        throw new Error("Need ≥1 enabled candidate model, a Gemini judge, a rubric, and ≥1 task.");
+        throw new Error("Need ≥1 enabled candidate model, an enabled judge, a rubric, and ≥1 task.");
       }
       const { evalRun } = await api.createRun({
         name: `Comparison ${new Date().toLocaleString()}`,

@@ -23,6 +23,32 @@ function retryDelayMs(message: string): number {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Translate standard JSON Schema into Gemini's responseSchema dialect: type values are
+ * uppercase OpenAPI names, and additionalProperties is not part of the dialect.
+ */
+export function toGeminiSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === "additionalProperties") continue;
+    if (key === "type" && typeof value === "string") {
+      out[key] = value.toUpperCase();
+    } else if (key === "properties" && typeof value === "object" && value !== null) {
+      out[key] = Object.fromEntries(
+        Object.entries(value as Record<string, Record<string, unknown>>).map(([k, v]) => [
+          k,
+          toGeminiSchema(v),
+        ]),
+      );
+    } else if (key === "items" && typeof value === "object" && value !== null) {
+      out[key] = toGeminiSchema(value as Record<string, unknown>);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 /** Google Gemini — the first provider enabled (free tier). Calls the REST API directly. */
 export class GeminiProvider implements CompletionProvider {
   readonly slug = "google" as const;
@@ -42,7 +68,7 @@ export class GeminiProvider implements CompletionProvider {
     if (req.jsonSchema) {
       // Structured output — used by judge calls so per-criterion scores parse reliably.
       generationConfig.responseMimeType = "application/json";
-      generationConfig.responseSchema = req.jsonSchema;
+      generationConfig.responseSchema = toGeminiSchema(req.jsonSchema);
     }
     if (Object.keys(generationConfig).length > 0) body.generationConfig = generationConfig;
 

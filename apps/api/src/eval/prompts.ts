@@ -16,8 +16,9 @@ export interface JudgePromptInput {
  * response. The schema constrains the judge to one {criterion, score, reasoning} per criterion,
  * so per-criterion scores parse reliably.
  *
- * Note: the schema uses Gemini's responseSchema dialect (uppercase OpenAPI types). Gemini is
- * the only wired judge today; a Claude adapter will need to translate to standard JSON Schema.
+ * The schema is standard JSON Schema (lowercase types, additionalProperties: false) — the
+ * dialect Anthropic's output_config.format and OpenAI's response_format expect. The Gemini
+ * adapter translates it to its own responseSchema dialect.
  */
 export function buildJudgePrompt(input: JudgePromptInput): {
   system: string;
@@ -58,22 +59,24 @@ export function buildJudgePrompt(input: JudgePromptInput): {
   ].join("\n");
 
   const jsonSchema = {
-    type: "OBJECT",
+    type: "object",
     properties: {
       scores: {
-        type: "ARRAY",
+        type: "array",
         items: {
-          type: "OBJECT",
+          type: "object",
           properties: {
-            criterion: { type: "STRING" },
-            score: { type: "INTEGER" },
-            reasoning: { type: "STRING" },
+            criterion: { type: "string" },
+            score: { type: "integer" },
+            reasoning: { type: "string" },
           },
           required: ["criterion", "score", "reasoning"],
+          additionalProperties: false,
         },
       },
     },
     required: ["scores"],
+    additionalProperties: false,
   };
 
   return { system, prompt, jsonSchema };

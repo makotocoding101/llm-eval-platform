@@ -1,16 +1,96 @@
 import type { CompletionProvider, CompletionRequest, CompletionResult } from "./types";
 
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_VERSION = "2023-06-01";
+const MAX_ATTEMPTS = 3;
+
+interface AnthropicResponse {
+  content?: Array<{ type: string; text?: string }>;
+  stop_reason?: string;
+  usage?: { input_tokens?: number; output_tokens?: number };
+  error?: { type?: string; message?: string };
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /**
- * Anthropic (Claude) — the independent judge. Deferred (seeded disabled) until API access
- * is turned on. Judge calls pass `jsonSchema` for structured per-criterion scores.
+ * Anthropic (Claude) — the independent judge. Calls the Messages API directly (no SDK).
+ * Judge calls pass `jsonSchema` for structured per-criterion scores via output_config.format.
  * Default judge model: claude-opus-4-8 (claude-sonnet-5 for a cheaper judge at volume).
  */
 export class AnthropicProvider implements CompletionProvider {
   readonly slug = "anthropic" as const;
 
-  async complete(_req: CompletionRequest): Promise<CompletionResult> {
-    // TODO: call the Anthropic Messages API using ANTHROPIC_API_KEY.
-    // Use output_config.format (json_schema) when req.jsonSchema is set; adaptive thinking.
-    throw new Error("AnthropicProvider.complete not implemented");
+  async complete(req: CompletionRequest): Promise<CompletionResult> {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
+
+    const body: Record<string, unknown> = {
+      model: req.model,
+      max_tokens: req.maxTokens ?? 16000,
+      // Adaptive thinking: Claude decides when/how much to reason — helps judge quality.
+      thinking: { type: "adaptive" },
+      messages: [{ role: "user", content: req.prompt }],
+    };
+    if (req.system) body.system = req.system;
+    if (req.jsonSchema) {
+      // Structured output — standard JSON Schema, exactly as buildJudgePrompt emits it.
+      body.output_config = { format: { type: "json_schema", schema: req.jsonSchema } };
+    }
+
+    const timeoutMs = req.timeoutMs ?? 120_000;
+    const startedAt = Date.now();
+    let res!: Response;
+    let json!: AnthropicResponse;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        res = await fetch(ANTHROPIC_URL, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": ANTHROPIC_VERSION,
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch (err) {
+        if (err instanceof Error && err.name === "TimeoutError") {
+          throw new Error(`Anthropic request timed out after ${timeoutMs}ms`);
+        }
+        throw err;
+      }
+      json = (await res.json()) as AnthropicResponse;
+      if (res.ok) break;
+      // 429 rate limit / 529 overloaded are retryable; honor retry-after when present.
+      if ((res.status === 429 || res.status === 529) && attempt < MAX_ATTEMPTS) {
+        const retryAfter = Number(res.headers.get("retry-after"));
+        const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : attempt * 2000;
+        await sleep(Math.min(delayMs, 60_000));
+        continue;
+      }
+      throw new Error(`Anthropic ${res.status}: ${json.error?.message ?? res.statusText}`);
+    }
+    const latencyMs = Date.now() - startedAt;
+
+    // Safety classifiers can decline with HTTP 200 + stop_reason "refusal" — never
+    // treat that as a scoreable (empty/partial) response.
+    if (json.stop_reason === "refusal") {
+      throw new Error("Anthropic refused the request (stop_reason: refusal)");
+    }
+
+    const text = (json.content ?? [])
+      .filter((block) => block.type === "text")
+      .map((block) => block.text ?? "")
+      .join("");
+    if (!text) throw new Error(`Anthropic returned no text (stop_reason: ${json.stop_reason})`);
+
+    return {
+      text,
+      raw: json,
+      promptTokens: json.usage?.input_tokens ?? null,
+      completionTokens: json.usage?.output_tokens ?? null,
+      latencyMs,
+    };
   }
 }
