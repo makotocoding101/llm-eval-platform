@@ -1,20 +1,23 @@
 import { useState } from "react";
 import { EvalRuns } from "./pages/EvalRuns";
+import { Home } from "./pages/Home";
 import { Rubrics } from "./pages/Rubrics";
 import { SpotCheck } from "./pages/SpotCheck";
 import { Tasks } from "./pages/Tasks";
 
-const pages = {
-  "Eval Runs": <EvalRuns />,
-  Tasks: <Tasks />,
-  Rubrics: <Rubrics />,
-  "Spot Check": <SpotCheck />,
-} as const;
-
-type PageName = keyof typeof pages;
+const pageNames = ["Home", "Eval Runs", "Tasks", "Rubrics", "Spot Check"] as const;
+type PageName = (typeof pageNames)[number];
 
 export function App() {
-  const [page, setPage] = useState<PageName>("Eval Runs");
+  const [page, setPage] = useState<PageName>("Home");
+
+  const pages: Record<PageName, React.ReactNode> = {
+    Home: <Home onViewDashboard={() => setPage("Eval Runs")} />,
+    "Eval Runs": <EvalRuns />,
+    Tasks: <Tasks />,
+    Rubrics: <Rubrics />,
+    "Spot Check": <SpotCheck />,
+  };
 
   return (
     <div className="min-h-screen">
@@ -24,7 +27,7 @@ export function App() {
             LLM Eval <span className="text-zinc-500">Platform</span>
           </h1>
           <nav className="flex gap-1 rounded-full border border-white/[0.06] bg-card p-1">
-            {(Object.keys(pages) as PageName[]).map((name) => (
+            {pageNames.map((name) => (
               <button
                 key={name}
                 onClick={() => setPage(name)}
