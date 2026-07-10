@@ -1,0 +1,25 @@
+@import "@fontsource-variable/inter";
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+
+  /* Near-black surface system: page < inset < card, separated by hairline borders. */
+  --color-surface: #0a0a0a;
+  --color-inset: #0e0e10;
+  --color-card: #131316;
+
+  /* The single accent. Active states, primary buttons, key highlights only. */
+  --color-accent: #a3e635;
+}
+
+html {
+  background-color: var(--color-surface);
+}
+
+body {
+  background-color: var(--color-surface);
+  color: var(--color-zinc-200);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
