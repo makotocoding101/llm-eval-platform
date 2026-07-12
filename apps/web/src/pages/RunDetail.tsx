@@ -8,10 +8,24 @@ function fmt(n: string | null): string {
   return Number.isFinite(v) ? v.toFixed(2) : "—";
 }
 
+// Quality bands: red below 3, yellow 3–3.99, orange 4–4.99, accent green for a perfect 5.
+function scoreColor(n: string | null): string {
+  const v = Number(n);
+  if (n == null || !Number.isFinite(v)) return "text-zinc-50";
+  if (v < 3) return "text-red-400";
+  if (v < 4) return "text-yellow-400";
+  if (v < 5) return "text-orange-400";
+  return "text-accent";
+}
+
 function ModelCard({ ex, isTop }: { ex: Execution; isTop: boolean }) {
   const q = ex.response?.quality;
   return (
-    <div className="flex min-w-[300px] flex-1 basis-80 flex-col rounded-2xl border border-white/[0.06] bg-card p-6 shadow-lg shadow-black/20">
+    <div
+      className={`flex min-w-[300px] flex-1 basis-80 flex-col rounded-2xl border bg-card p-6 shadow-lg shadow-black/20 ${
+        isTop ? "border-accent/40" : "border-white/[0.06]"
+      }`}
+    >
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-sm font-semibold text-zinc-100">{ex.model.displayName}</span>
         <StatusBadge label={ex.status} meta={executionStatus[ex.status]} />
@@ -26,7 +40,7 @@ function ModelCard({ ex, isTop }: { ex: Execution; isTop: boolean }) {
         <>
           <div className="mt-5 flex items-baseline gap-2.5">
             <span
-              className={`text-3xl font-bold tracking-tight tabular-nums ${isTop ? "text-accent" : "text-zinc-50"}`}
+              className={`text-3xl font-bold tracking-tight tabular-nums ${scoreColor(q?.weightedScore ?? null)}`}
             >
               {fmt(q?.weightedScore ?? null)}
             </span>

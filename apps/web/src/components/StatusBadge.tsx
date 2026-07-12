@@ -1,6 +1,6 @@
 import type { EvalRunDetail, Execution } from "../api/client";
 
-// Status is dot + label, never color alone. Success stays quiet (zinc); red is
+// Status is dot + label, never color alone. Green marks terminal success, red is
 // reserved for errors and the accent for active/in-flight states.
 export interface StatusMeta {
   dot: string;
@@ -11,14 +11,14 @@ export interface StatusMeta {
 export const executionStatus: Record<Execution["status"], StatusMeta> = {
   pending: { dot: "bg-zinc-600", text: "text-zinc-500" },
   running: { dot: "bg-accent", text: "text-accent", pulse: true },
-  success: { dot: "bg-zinc-400", text: "text-zinc-400" },
+  success: { dot: "bg-emerald-400", text: "text-zinc-400" },
   error: { dot: "bg-red-400", text: "text-red-400" },
 };
 
 export const runStatus: Record<EvalRunDetail["status"], StatusMeta> = {
   pending: { dot: "bg-zinc-600", text: "text-zinc-500" },
   running: { dot: "bg-accent", text: "text-accent", pulse: true },
-  completed: { dot: "bg-zinc-400", text: "text-zinc-400" },
+  completed: { dot: "bg-emerald-400", text: "text-zinc-400" },
   failed: { dot: "bg-red-400", text: "text-red-400" },
 };
 

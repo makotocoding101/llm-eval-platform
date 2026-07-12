@@ -23,8 +23,8 @@ export function App() {
     <div className="min-h-screen">
       <div className="mx-auto max-w-6xl px-6 py-10">
         <header className="mb-12 flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-lg font-semibold tracking-tight text-zinc-50">
-            LLM Eval <span className="text-zinc-500">Platform</span>
+          <h1 className="text-lg font-semibold tracking-tight text-zinc-500">
+            LLM Eval Platform
           </h1>
           <nav className="flex gap-1 rounded-full border border-white/[0.06] bg-card p-1">
             {pageNames.map((name) => (
