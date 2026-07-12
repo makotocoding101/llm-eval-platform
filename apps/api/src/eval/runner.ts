@@ -80,10 +80,12 @@ export async function runEvalRun(
         try {
           const outcome = await judgeResponse(db, row.responseId);
           responsesJudged += 1;
-          if (outcome.scored < outcome.expected) {
-            judgePartial += 1;
+          if (outcome.scored < outcome.expected) judgePartial += 1;
+          // Log issues even when every criterion got a score — a fully scored response
+          // can still hide clamped (out_of_range) or discarded (invalid_score) values.
+          if (outcome.issues.length > 0) {
             console.warn(
-              `[judge] partial: response ${row.responseId} scored ${outcome.scored}/${outcome.expected}`,
+              `[judge] issues: response ${row.responseId} scored ${outcome.scored}/${outcome.expected}`,
               outcome.issues,
             );
           }

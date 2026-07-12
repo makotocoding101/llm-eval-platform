@@ -58,6 +58,19 @@ export function buildJudgePrompt(input: JudgePromptInput): {
       "one-sentence justification first, then the integer score within that criterion's stated range.",
   ].join("\n");
 
+  // Bound the score in the schema itself so out-of-range numbers can't decode at all.
+  // Anthropic's structured output rejects minimum/maximum on integers, so the range is
+  // an enum of the allowed values. Criteria may differ in scale, so this is the loosest
+  // envelope across them; parseJudgeOutput still enforces each criterion's exact range
+  // (and clamps). Pathologically wide scales skip the enum and rely on the clamp alone.
+  const scaleMin = Math.min(...criteria.map((c) => c.scaleMin));
+  const scaleMax = Math.max(...criteria.map((c) => c.scaleMax));
+  const span = scaleMax - scaleMin + 1;
+  const scoreSchema: Record<string, unknown> =
+    span >= 1 && span <= 20
+      ? { type: "integer", enum: Array.from({ length: span }, (_, i) => scaleMin + i) }
+      : { type: "integer" };
+
   const jsonSchema = {
     type: "object",
     properties: {
@@ -71,7 +84,7 @@ export function buildJudgePrompt(input: JudgePromptInput): {
           properties: {
             criterion: { type: "string" },
             reasoning: { type: "string" },
-            score: { type: "integer" },
+            score: scoreSchema,
           },
           required: ["criterion", "reasoning", "score"],
           additionalProperties: false,
