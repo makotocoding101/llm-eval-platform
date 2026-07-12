@@ -8,6 +8,7 @@ export * from "./evalRuns";
 export * from "./executions";
 export * from "./responses";
 export * from "./scores";
+export * from "./judgeCalls";
 export * from "./spotChecks";
 export * from "./relations";
 export * from "../views/responseQuality";

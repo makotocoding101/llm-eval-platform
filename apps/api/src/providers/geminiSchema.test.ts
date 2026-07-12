@@ -54,10 +54,14 @@ describe("toGeminiSchema", () => {
     expect(jsonSchema.type).toBe("object");
     expect(jsonSchema.additionalProperties).toBe(false);
 
-    // Gemini dialect: uppercase, no additionalProperties anywhere
+    // Gemini dialect: uppercase, no additionalProperties anywhere, and the integer
+    // score enum becomes minimum/maximum (Gemini only allows string enums).
     const gemini = toGeminiSchema(jsonSchema);
     expect(gemini.type).toBe("OBJECT");
     expect(JSON.stringify(gemini)).not.toContain("additionalProperties");
     expect(JSON.stringify(gemini)).toContain('"INTEGER"');
+    expect(JSON.stringify(gemini)).not.toContain('"enum"');
+    expect(JSON.stringify(gemini)).toContain('"minimum":1');
+    expect(JSON.stringify(gemini)).toContain('"maximum":5');
   });
 });

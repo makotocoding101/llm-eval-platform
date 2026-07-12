@@ -1,7 +1,8 @@
-import { responses, scores, type DB } from "@llm-eval/db";
+import { judgeCalls, responses, scores, type DB } from "@llm-eval/db";
 import type { ProviderSlug } from "@llm-eval/shared";
 import { eq } from "drizzle-orm";
 import { getProvider } from "../providers/registry";
+import type { CompletionResult } from "../providers/types";
 import { parseJudgeOutput, type JudgeIssue } from "./parseJudgeOutput";
 import { buildJudgePrompt } from "./prompts";
 
@@ -75,24 +76,39 @@ export async function judgeResponse(db: DB, responseId: string): Promise<JudgeOu
   });
 
   const provider = getProvider(evalRun.judgeModel.provider.slug as ProviderSlug);
-  let text: string;
+  let result: CompletionResult;
   try {
-    const result = await provider.complete({
+    result = await provider.complete({
       model: evalRun.judgeModel.apiName,
       prompt,
       system,
       jsonSchema,
       timeoutMs: JUDGE_TIMEOUT_MS,
     });
-    text = result.text;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const reason = /timed out/i.test(message) ? "timeout" : "provider_error";
     throw new JudgeError(reason, `judge call failed for response ${responseId}: ${message}`);
   }
 
+  // Persist the verbatim judge output (with real token/latency numbers) before parsing,
+  // so malformed or contradictory judge calls stay auditable without re-running the
+  // judge. Best-effort: an audit-trail failure must not sink a good judge call.
+  try {
+    await db.insert(judgeCalls).values({
+      responseId,
+      judgeModelId: evalRun.judgeModel.id,
+      rawOutput: result.text,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      latencyMs: result.latencyMs,
+    });
+  } catch (err) {
+    console.warn(`[judge] could not persist raw output for response ${responseId}:`, err);
+  }
+
   const parsed = parseJudgeOutput(
-    text,
+    result.text,
     criteria.map((c) => ({ id: c.id, name: c.name, scaleMin: c.scaleMin, scaleMax: c.scaleMax })),
   );
   if (parsed.fatal) {

@@ -25,7 +25,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Translate standard JSON Schema into Gemini's responseSchema dialect: type values are
- * uppercase OpenAPI names, and additionalProperties is not part of the dialect.
+ * uppercase OpenAPI names, additionalProperties is not part of the dialect, and numeric
+ * enums (Gemini allows string enums only) become minimum/maximum bounds.
  */
 export function toGeminiSchema(schema: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -45,6 +46,18 @@ export function toGeminiSchema(schema: Record<string, unknown>): Record<string, 
     } else {
       out[key] = value;
     }
+  }
+  // Gemini rejects non-string enum values (TYPE_STRING errors). The judge schema's
+  // integer score enum is a contiguous range, so min/max is a lossless translation.
+  if (
+    (out.type === "INTEGER" || out.type === "NUMBER") &&
+    Array.isArray(out.enum) &&
+    out.enum.length > 0 &&
+    out.enum.every((v) => typeof v === "number")
+  ) {
+    out.minimum = Math.min(...(out.enum as number[]));
+    out.maximum = Math.max(...(out.enum as number[]));
+    delete out.enum;
   }
   return out;
 }

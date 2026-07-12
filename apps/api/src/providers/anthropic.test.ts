@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AnthropicProvider, modelsWithoutAdaptiveThinking } from "./anthropic";
+import {
+  AnthropicProvider,
+  modelsWithoutAdaptiveThinking,
+  modelsWithoutThinking,
+} from "./anthropic";
 
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return {
@@ -24,6 +28,7 @@ describe("AnthropicProvider", () => {
   beforeEach(() => {
     vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
     modelsWithoutAdaptiveThinking.clear();
+    modelsWithoutThinking.clear();
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -113,7 +118,7 @@ describe("AnthropicProvider", () => {
     ).rejects.toThrow(/refusal/);
   });
 
-  it("drops adaptive thinking and retries when the model rejects it (e.g. Haiku 4.5)", async () => {
+  it("steps down to budget thinking when the model rejects adaptive (e.g. Haiku 4.5)", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -130,13 +135,42 @@ describe("AnthropicProvider", () => {
     const firstBody = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
     const retryBody = JSON.parse(fetchMock.mock.calls[1]![1]!.body as string);
     expect(firstBody.thinking).toEqual({ type: "adaptive" });
-    expect(retryBody.thinking).toBeUndefined();
+    expect(retryBody.thinking).toEqual({ type: "enabled", budget_tokens: 4096 });
 
-    // The model is remembered — the next call skips thinking from the start.
+    // The model is remembered — the next call starts on budget thinking directly.
     await provider.complete({ model: "claude-haiku-4-5-20251001", prompt: "judge again" });
     const thirdBody = JSON.parse(fetchMock.mock.calls[2]![1]!.body as string);
-    expect(thirdBody.thinking).toBeUndefined();
+    expect(thirdBody.thinking).toEqual({ type: "enabled", budget_tokens: 4096 });
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("drops thinking entirely when the budget style is rejected too", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse(400, { error: { message: "adaptive thinking is not supported on this model" } }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(400, { error: { message: "thinking is not supported on this model" } }),
+      )
+      .mockResolvedValue(success);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new AnthropicProvider();
+    const result = await provider.complete({ model: "claude-legacy", prompt: "judge" });
+    expect(result.text).toContain("scores");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse(c[1]!.body as string));
+    expect(bodies[0].thinking).toEqual({ type: "adaptive" });
+    expect(bodies[1].thinking).toEqual({ type: "enabled", budget_tokens: 4096 });
+    expect(bodies[2].thinking).toBeUndefined();
+
+    // Remembered — the next call sends no thinking at all.
+    await provider.complete({ model: "claude-legacy", prompt: "judge again" });
+    const fourthBody = JSON.parse(fetchMock.mock.calls[3]![1]!.body as string);
+    expect(fourthBody.thinking).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it("aborts a hung request and reports the timeout", async () => {

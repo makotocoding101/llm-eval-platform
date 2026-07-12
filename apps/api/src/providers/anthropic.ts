@@ -13,10 +13,17 @@ interface AnthropicResponse {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Models that rejected adaptive thinking (pre-4.6 models like Haiku 4.5 only support
-// the older budget_tokens style). Learned at runtime from the API's 400 rather than a
-// hand-maintained capability table; judge calls work fine without thinking there.
+// Thinking support is learned at runtime from the API's 400s rather than a
+// hand-maintained capability table, stepping down one level per rejection:
+// adaptive → enabled+budget_tokens (pre-4.6 models like Haiku 4.5) → no thinking.
 export const modelsWithoutAdaptiveThinking = new Set<string>();
+export const modelsWithoutThinking = new Set<string>();
+
+/** Budget for the older thinking style: the API requires ≥1024 and < max_tokens. */
+function thinkingBudget(maxTokens: number): number | null {
+  const budget = Math.min(4096, Math.floor(maxTokens / 2));
+  return budget >= 1024 ? budget : null;
+}
 
 /**
  * Anthropic (Claude) — the independent judge. Calls the Messages API directly (no SDK).
@@ -31,14 +38,22 @@ export class AnthropicProvider implements CompletionProvider {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
 
+    const maxTokens = req.maxTokens ?? 16000;
     const body: Record<string, unknown> = {
       model: req.model,
-      max_tokens: req.maxTokens ?? 16000,
+      max_tokens: maxTokens,
       messages: [{ role: "user", content: req.prompt }],
     };
-    // Adaptive thinking: Claude decides when/how much to reason — helps judge quality.
-    if (!modelsWithoutAdaptiveThinking.has(req.model)) {
-      body.thinking = { type: "adaptive" };
+    // Thinking materially improves judge quality (score-first snap verdicts without it).
+    // Prefer adaptive — Claude decides when/how much to reason; models that rejected it
+    // use the older budget style; models that rejected both run without.
+    if (!modelsWithoutThinking.has(req.model)) {
+      if (!modelsWithoutAdaptiveThinking.has(req.model)) {
+        body.thinking = { type: "adaptive" };
+      } else {
+        const budget = thinkingBudget(maxTokens);
+        if (budget) body.thinking = { type: "enabled", budget_tokens: budget };
+      }
     }
     if (req.system) body.system = req.system;
     if (req.jsonSchema) {
@@ -70,15 +85,19 @@ export class AnthropicProvider implements CompletionProvider {
       }
       json = (await res.json()) as AnthropicResponse;
       if (res.ok) break;
-      // Pre-4.6 models (e.g. Haiku 4.5) reject adaptive thinking with a 400 — drop the
-      // field, remember the model, and retry immediately (doesn't consume an attempt).
-      if (
-        res.status === 400 &&
-        "thinking" in body &&
-        /thinking is not supported/i.test(json.error?.message ?? "")
-      ) {
-        modelsWithoutAdaptiveThinking.add(req.model);
-        delete body.thinking;
+      // Thinking-related 400s step down one level and retry immediately (doesn't
+      // consume an attempt): adaptive → enabled+budget (pre-4.6 models like Haiku 4.5
+      // only support the older style) → no thinking. Remembered per model.
+      if (res.status === 400 && "thinking" in body && /thinking/i.test(json.error?.message ?? "")) {
+        const budget = thinkingBudget(maxTokens);
+        if ((body.thinking as { type?: string }).type === "adaptive" && budget) {
+          modelsWithoutAdaptiveThinking.add(req.model);
+          body.thinking = { type: "enabled", budget_tokens: budget };
+        } else {
+          modelsWithoutAdaptiveThinking.add(req.model);
+          modelsWithoutThinking.add(req.model);
+          delete body.thinking;
+        }
         attempt--;
         continue;
       }

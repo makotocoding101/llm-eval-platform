@@ -45,7 +45,7 @@ packages/shared Enums + zod DTOs shared by api and web
 ```
 
 - **Postgres** via Neon (or local Docker Compose) through Drizzle ORM.
-- **Three provider integrations**, each a small adapter over the raw HTTP API (no SDKs): Google Gemini, OpenAI, Anthropic. The Anthropic adapter handles adaptive thinking with a self-healing fallback (models that reject it are learned at runtime from the 400, not hand-listed), structured JSON-schema output, 429/529 retry with `retry-after`, refusal detection, and per-call token/latency logging.
+- **Three provider integrations**, each a small adapter over the raw HTTP API (no SDKs): Google Gemini, OpenAI, Anthropic. The Anthropic adapter handles thinking with a self-healing step-down (adaptive → budget-style → none, learned per model at runtime from the API's 400s, not hand-listed), structured JSON-schema output, 429/529 retry with `retry-after`, refusal detection, and per-call token/latency logging. Every judge call's verbatim output is persisted to a `judge_calls` audit table.
 - **Judge prompts emit standard JSON Schema**; the Gemini adapter translates to Gemini's schema dialect, so one prompt builder serves all providers.
 
 ## Design decisions worth defending
