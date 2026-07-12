@@ -40,7 +40,7 @@ TypeScript monorepo (pnpm workspaces):
 ```
 apps/web        React 19 + Vite 6 + Tailwind v4 dashboard (dark, data-dense)
 apps/api        Fastify 5 API + in-process eval orchestrator + spot-check CLI
-packages/db     Drizzle ORM: 10-table schema, quality-score view, seeds
+packages/db     Drizzle ORM: 11-table schema, quality-score view, seeds
 packages/shared Enums + zod DTOs shared by api and web
 ```
 
