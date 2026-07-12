@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type EvalRun } from "../api/client";
+import { StatusBadge, runStatus } from "../components/StatusBadge";
 import { RunDetail } from "./RunDetail";
-
-const statusColor: Record<EvalRun["status"], string> = {
-  pending: "#888",
-  running: "#0a7",
-  completed: "#0a0",
-  failed: "#c00",
-};
 
 export function EvalRuns() {
   const [runs, setRuns] = useState<EvalRun[] | null>(null);
@@ -38,9 +32,10 @@ export function EvalRuns() {
         api.rubrics(),
       ]);
       const candidates = models.filter((m) => m.kind === "candidate" && m.enabled);
-      // Prefer the dedicated judge model (Claude — independent, not a candidate);
-      // fall back to Gemini only while the judge model is disabled.
+      // The active judge is an explicit, DB-enforced flag (at most one model holds it) —
+      // never an accident of row order. Fall back to any enabled judge, then Gemini.
       const judge =
+        models.find((m) => m.isActiveJudge && m.enabled) ??
         models.find((m) => m.enabled && m.kind === "judge") ??
         models.find((m) => m.enabled && m.apiName.startsWith("gemini"));
       const rubric = rubrics[0];
@@ -69,46 +64,69 @@ export function EvalRuns() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <button onClick={newComparisonRun} disabled={creating}>
-          {creating ? "Starting…" : "＋ New comparison run"}
-        </button>
-        <button onClick={load} disabled={creating}>
-          Refresh
-        </button>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight text-zinc-50">Eval Runs</h2>
+          <p className="mt-2 text-sm text-zinc-500">
+            Every task, sent to every candidate model, scored by the independent judge.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={load}
+            disabled={creating}
+            className="rounded-full border border-white/10 px-5 py-2 text-sm text-zinc-400 transition-colors hover:border-white/20 hover:text-zinc-100 disabled:opacity-40"
+          >
+            Refresh
+          </button>
+          <button
+            onClick={newComparisonRun}
+            disabled={creating}
+            className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-40"
+          >
+            {creating ? "Starting…" : "＋ New comparison run"}
+          </button>
+        </div>
       </div>
 
-      {error && <p style={{ color: "#c00" }}>{error}</p>}
-      {!runs && <p>Loading…</p>}
-      {runs && runs.length === 0 && <p>No runs yet — start one above.</p>}
+      {error && <p className="mt-6 text-sm text-red-400">{error}</p>}
+      {!runs && !error && <p className="mt-8 text-sm text-zinc-500">Loading…</p>}
+
+      {runs && runs.length === 0 && (
+        <div className="mt-8 rounded-2xl border border-dashed border-white/10 p-12 text-center text-sm text-zinc-500">
+          No runs yet — start one with ＋ New comparison run.
+        </div>
+      )}
 
       {runs && runs.length > 0 && (
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead>
-            <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-              <th style={{ padding: "8px 12px" }}>Name</th>
-              <th style={{ padding: "8px 12px" }}>Status</th>
-              <th style={{ padding: "8px 12px" }}>Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {runs.map((r) => (
-              <tr
-                key={r.id}
-                onClick={() => setSelectedRunId(r.id)}
-                style={{ cursor: "pointer", borderBottom: "1px solid #eee" }}
-              >
-                <td style={{ padding: "8px 12px", fontWeight: 500 }}>{r.name}</td>
-                <td style={{ padding: "8px 12px" }}>
-                  <span style={{ color: statusColor[r.status], fontWeight: 600 }}>{r.status}</span>
-                </td>
-                <td style={{ padding: "8px 12px", color: "#666" }}>
-                  {new Date(r.createdAt).toLocaleString()}
-                </td>
+        <div className="mt-8 overflow-hidden rounded-2xl border border-white/[0.06] bg-card shadow-lg shadow-black/20">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-white/5 text-[11px] tracking-[0.14em] text-zinc-500 uppercase">
+                <th className="px-6 py-3.5 font-medium">Name</th>
+                <th className="px-6 py-3.5 font-medium">Status</th>
+                <th className="px-6 py-3.5 font-medium">Created</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {runs.map((r) => (
+                <tr
+                  key={r.id}
+                  onClick={() => setSelectedRunId(r.id)}
+                  className="cursor-pointer transition-colors hover:bg-white/[0.03]"
+                >
+                  <td className="px-6 py-4 font-medium text-zinc-100">{r.name}</td>
+                  <td className="px-6 py-4">
+                    <StatusBadge label={r.status} meta={runStatus[r.status]} />
+                  </td>
+                  <td className="px-6 py-4 text-zinc-500 tabular-nums">
+                    {new Date(r.createdAt).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

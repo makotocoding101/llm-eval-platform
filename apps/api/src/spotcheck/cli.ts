@@ -33,7 +33,7 @@ import { computeAgreement, type AgreementEntry, type AgreementStats } from "./ag
  *   --reviewer <name>    stored in spot_checks.reviewer (default: OS username)
  *   --run <evalRunId>    only sample from one eval run
  *   --judge <apiName>    only sample scores produced by this judge model
- *   --include-checked    re-offer responses this reviewer already checked
+ *   --include-checked    re-offer already-checked responses and duplicate answer texts
  *   --show-judge         reveal the judge's score before you enter yours (not blind)
  *   --report             no interaction: recompute agreement over all stored spot checks
  */
@@ -62,6 +62,9 @@ const judgeModels = alias(models, "judge_models");
 
 function parseCliArgs() {
   const { values } = parseArgs({
+    // pnpm forwards a literal "--" when invoked npm-style (pnpm spotcheck -- --n 5);
+    // drop it, or parseArgs demotes every flag after it to a positional.
+    args: process.argv.slice(2).filter((a) => a !== "--"),
     options: {
       n: { type: "string", default: "10" },
       reviewer: { type: "string", default: process.env.USERNAME || process.env.USER || "human" },
@@ -216,6 +219,20 @@ async function main() {
     ).map((r) => r.scoreId),
   );
 
+  // Answer texts this reviewer has already graded (across all runs/models).
+  // Different candidate models often emit byte-identical answers on easy tasks;
+  // grading the same text twice adds no information and inflates agreement.
+  const checkedContents = new Set(
+    (
+      await db
+        .selectDistinct({ content: responses.content })
+        .from(spotChecks)
+        .innerJoin(scores, eq(spotChecks.scoreId, scores.id))
+        .innerJoin(responses, eq(scores.responseId, responses.id))
+        .where(eq(spotChecks.reviewer, args.reviewer))
+    ).map((r) => r.content.trim()),
+  );
+
   // Group score rows into responses; a response is exhausted for this reviewer
   // once every one of its criterion scores has a spot check.
   const byResponse = new Map<string, ScoreRow[]>();
@@ -227,13 +244,29 @@ async function main() {
   let candidates = [...byResponse.values()];
   if (!args.includeChecked) {
     candidates = candidates.filter((group) => group.some((r) => !checkedScoreIds.has(r.scoreId)));
+    const beforeContentDedup = candidates.length;
+    candidates = candidates.filter((group) => !checkedContents.has(group[0]!.responseContent.trim()));
+    const dupes = beforeContentDedup - candidates.length;
+    if (dupes > 0) console.log(`Skipping ${dupes} response(s) identical to answers you already scored.`);
   }
   if (candidates.length === 0) {
-    console.log(`Every matching response already has spot checks by "${args.reviewer}" (use --include-checked to redo).`);
+    console.log(
+      `Every matching response already has spot checks by "${args.reviewer}"` +
+        ` or repeats an answer you already scored (use --include-checked to redo).`,
+    );
     return;
   }
 
-  const sample = shuffle(candidates).slice(0, args.n);
+  // Never offer the same answer text twice within one session either.
+  const sample: ScoreRow[][] = [];
+  const sampledContents = new Set<string>();
+  for (const group of shuffle(candidates)) {
+    if (sample.length >= args.n) break;
+    const content = group[0]!.responseContent.trim();
+    if (!args.includeChecked && sampledContents.has(content)) continue;
+    sampledContents.add(content);
+    sample.push(group);
+  }
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const sessionEntries: AgreementEntry[] = [];
   let quit = false;

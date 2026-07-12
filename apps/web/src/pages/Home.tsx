@@ -111,7 +111,7 @@ export function Home({ onViewDashboard }: { onViewDashboard: () => void }) {
     <section className="relative overflow-hidden">
       <DotGridHero />
       {/* Fade the grid out toward the edges so it sits behind the type, not against it. */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_55%_at_center,transparent_40%,#0a0a0a_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_55%_at_center,transparent_40%,var(--color-surface)_100%)]" />
 
       <div className="relative z-10 flex min-h-[72vh] flex-col items-center justify-center py-28 text-center">
         <p className="text-[11px] font-medium tracking-[0.22em] text-zinc-500 uppercase">

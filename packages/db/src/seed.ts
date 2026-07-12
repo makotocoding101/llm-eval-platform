@@ -28,7 +28,8 @@ async function seed() {
 
   // Models. Insert order is preserved in the returned rows.
   // api_names for candidates are illustrative — confirm the exact strings.
-  // claude-opus-4-8 is the authoritative judge model id.
+  // The active judge is chosen explicitly via models.is_active_judge (DB-enforced to at
+  // most one row) — seeded judges start inactive; flip the flag to pick one.
   const [geminiModel, , judgeModel] = await db
     .insert(models)
     .values([

@@ -31,6 +31,8 @@ export interface Model {
   displayName: string;
   kind: "candidate" | "judge";
   enabled: boolean;
+  /** At most one model holds this (DB-enforced); new runs are judged by it. */
+  isActiveJudge: boolean;
 }
 
 export interface Criterion {

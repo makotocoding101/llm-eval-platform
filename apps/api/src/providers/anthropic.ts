@@ -21,7 +21,8 @@ export const modelsWithoutAdaptiveThinking = new Set<string>();
 /**
  * Anthropic (Claude) — the independent judge. Calls the Messages API directly (no SDK).
  * Judge calls pass `jsonSchema` for structured per-criterion scores via output_config.format.
- * Default judge model: claude-opus-4-8 (claude-sonnet-5 for a cheaper judge at volume).
+ * The active judge is the models row with is_active_judge = true (currently Haiku 4.5,
+ * validated by spot checks; Opus/Sonnet are the pricier options if quality demands it).
  */
 export class AnthropicProvider implements CompletionProvider {
   readonly slug = "anthropic" as const;
@@ -91,6 +92,12 @@ export class AnthropicProvider implements CompletionProvider {
       throw new Error(`Anthropic ${res.status}: ${json.error?.message ?? res.statusText}`);
     }
     const latencyMs = Date.now() - startedAt;
+
+    // Real token spend per call — the basis for judge cost accounting, instead of
+    // estimating from prompt sizes. output_tokens includes any (billed) thinking.
+    console.log(
+      `[anthropic] model=${req.model} usage=${JSON.stringify(json.usage ?? {})} latency_ms=${latencyMs}`,
+    );
 
     // Safety classifiers can decline with HTTP 200 + stop_reason "refusal" — never
     // treat that as a scoreable (empty/partial) response.
