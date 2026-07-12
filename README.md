@@ -28,7 +28,7 @@ tasks ──► eval run ──► one execution per (task × candidate model)
 ```
 
 1. **Tasks** are versioned prompts — trivia, reasoning traps, timezone arithmetic, code bug hunts, instruction-following.
-2. **Rubrics** hold weighted criteria (accuracy w3, helpfulness w2, coherence w1, instruction compliance w2 — each scored 1–5).
+2. **Rubrics** hold weighted criteria (accuracy w2, helpfulness w1, coherence w1, instruction compliance w2 — each scored 1–5).
 3. **A comparison run** sends every task to every enabled candidate model (currently Gemini 2.5 Flash and GPT-4o mini), tracked as explicit execution rows with concurrency limits.
 4. **The judge** — a Claude model that is *not* a candidate — scores each response against every criterion in one structured-output call, with a one-sentence justification per score.
 5. **Quality scores** are a Postgres view over the scores table: change a rubric weight and every historical run re-ranks instantly, no recompute job.

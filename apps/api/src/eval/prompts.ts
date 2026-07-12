@@ -54,8 +54,8 @@ export function buildJudgePrompt(input: JudgePromptInput): {
     "== RUBRIC CRITERIA ==",
     criteriaBlock,
     "",
-    "Return a score for every criterion. Use the exact criterion name as given, an integer " +
-      "score within that criterion's stated range, and a one-sentence justification.",
+    "Return a score for every criterion. Use the exact criterion name as given. Write the " +
+      "one-sentence justification first, then the integer score within that criterion's stated range.",
   ].join("\n");
 
   const jsonSchema = {
@@ -65,12 +65,15 @@ export function buildJudgePrompt(input: JudgePromptInput): {
         type: "array",
         items: {
           type: "object",
+          // reasoning precedes score deliberately: models fill properties in schema order,
+          // so this forces the judge to write its justification before committing to a
+          // number. Score-first produced snap verdicts contradicted by their own reasoning.
           properties: {
             criterion: { type: "string" },
-            score: { type: "integer" },
             reasoning: { type: "string" },
+            score: { type: "integer" },
           },
-          required: ["criterion", "score", "reasoning"],
+          required: ["criterion", "reasoning", "score"],
           additionalProperties: false,
         },
       },
