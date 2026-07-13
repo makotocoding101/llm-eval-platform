@@ -136,5 +136,3 @@ Run a comparison from the dashboard (**Eval Runs → ＋ New comparison run**), 
 pnpm --filter @llm-eval/api spotcheck --n 10   # blind-score a sample in your terminal
 pnpm --filter @llm-eval/api spotcheck --report # aggregate agreement over all stored checks
 ```
-
-Your stored checks then show up in the dashboard's **Spot Check** tab as a live agreement report — KPI tiles plus per-criterion and per-judge tables, filterable per run.
