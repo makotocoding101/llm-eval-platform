@@ -102,6 +102,36 @@ export interface EvalRunDetail extends EvalRun {
   executions: Execution[];
 }
 
+export interface AgreementStats {
+  n: number;
+  /** Fraction of checks where human == judge (0..1). */
+  exactRate: number;
+  /** Fraction of checks where |judge - human| <= 1 (0..1). */
+  within1Rate: number;
+  meanAbsDiff: number;
+  /** Mean of (judge - human): positive = judge more lenient than the human. */
+  meanSignedDiff: number;
+}
+
+export interface CheckedRun {
+  id: string;
+  name: string;
+  createdAt: string;
+  checks: number;
+}
+
+export interface AgreementReport {
+  /** Null when no spot checks match the filter. */
+  overall: AgreementStats | null;
+  byCriterion: Record<string, AgreementStats>;
+  byJudgeModel: Record<string, AgreementStats>;
+  lastCheckedAt: string | null;
+  /** Runs that have at least one check, newest first. */
+  runs: CheckedRun[];
+  /** Run the report was computed over; null = all checks. */
+  selectedRunId: string | null;
+}
+
 export interface CreateRunInput {
   name: string;
   rubricId: string;
@@ -120,4 +150,7 @@ export const api = {
   // and watch `status`.
   createRun: (input: CreateRunInput) => post<{ evalRun: EvalRun }>("/eval-runs", input),
   rerun: (id: string) => post<{ evalRun: EvalRun }>(`/eval-runs/${id}/rerun`, {}),
+  // No arg = the newest checked run (clean current-judge data); "all" = every check.
+  spotCheckAgreement: (run?: string) =>
+    get<AgreementReport>(`/spot-checks/agreement${run ? `?run=${encodeURIComponent(run)}` : ""}`),
 };
