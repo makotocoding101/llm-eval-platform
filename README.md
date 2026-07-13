@@ -77,6 +77,8 @@ Overall:
   (bias = judge − human: positive means the judge is more lenient)
 ```
 
+> **⚠️ These numbers describe a degraded judge.** After they were collected, an audit of one contradictory score (see [Debugging](#debugging-the-judge-that-wasnt-thinking)) found that the judge had been scoring with **zero thinking tokens** — the Anthropic adapter silently stripped thinking whenever Haiku rejected adaptive mode — and that the output schema forced the score to be emitted *before* its justification. Both defects are fixed; a fresh blind validation pass against the repaired judge is in progress and will replace these numbers.
+
 Findings, honestly read:
 
 - **Claude Haiku 4.5 is the validated judge**: 79% exact / 84% within-1 agreement with blind human scoring over n=76, with near-zero aggregate bias (+0.13). It is the active judge on that evidence.
@@ -87,6 +89,19 @@ Findings, honestly read:
 ### What that means
 
 The judge is reliable for **style-level criteria** — coherence, helpfulness, instruction compliance — and systematically unreliable at **verifying facts it cannot check**. An LLM judge rewards fluent-but-wrong answers on accuracy, because confidence reads as correctness. Practical consequence: accuracy scoring needs grounding (a reference-answer comparison in the judge prompt), not free judgment. Tasks here already store an expected-answer description; wiring it into the accuracy criterion is the highest-value next change.
+
+## Debugging: the judge that wasn't thinking
+
+A spot-check surfaced a judge score that contradicted its own rationale: on "count the r's in strawberry", a correct answer of "3" got accuracy **1/5** with the reasoning *"the numerical answer of 3 is factually correct."*
+
+Pulling the stored score row ruled out a parsing bug — the database held exactly what the judge emitted, and a live reproduction hit the same contradiction 3 out of 3 times. The real cause was two silent degradations stacked on each other:
+
+1. **The output schema listed `score` before `reasoning`.** Structured-output models fill JSON properties in schema order, so the judge committed its verdict token before writing a word of justification. The "reasoning" was post-hoc rationalization — free to disagree with the number it was supposedly explaining.
+2. **The judge wasn't thinking at all.** Haiku 4.5 rejects adaptive thinking with a 400, and the adapter's fallback deleted thinking outright instead of downgrading it. Every judge call ran with zero thinking tokens, producing snap verdicts with a tell-tale bimodal score distribution (mostly 5s and 1s, little in between).
+
+Both are fixed: the schema now orders `reasoning` before `score`, and the adapter steps down per model — adaptive → budget-style thinking → none — learning each model's support from the API's 400s rather than a hand-maintained capability table. Verified live: the response that scored 1/5 three times in a row now scores 5/5, with real thinking (~350 tokens) behind every judge call.
+
+**Why the `judge_calls` audit table stores raw output *before* parsing.** Diagnosing this required re-running the judge live, because the platform only kept parsed scores. That's the wrong dependency for an audit: live reproduction costs money, is nondeterministic, and the judge model may have changed since the suspect score was written. Every judge call now persists its verbatim output — plus token counts and latency — before the parser touches it, so output the parser would reject, clamp, or misread is preserved exactly as the model produced it. The insert is deliberately best-effort: a failed audit write warns and moves on, never sinks a valid judge call.
 
 ## Limitations & future work
 
