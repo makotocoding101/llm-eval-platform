@@ -2,7 +2,6 @@
 
 Pick an LLM provider with data instead of intuition: head-to-head evals on your own tasks, scored per rubric criterion by an independent AI judge — and the judge itself is validated against blind human scoring.
 
-<!-- TODO: capture the Run Detail page and save it to docs/dashboard.png -->
 ![Dashboard — run detail](docs/dashboard.png)
 
 ## The problem
