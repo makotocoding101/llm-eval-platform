@@ -59,7 +59,7 @@ packages/shared Enums + zod DTOs shared by api and web
 
 ## Validation: does the judge agree with a human?
 
-The platform ships a spot-check CLI that samples judged responses and asks a human to score them **blind** — you commit your score before the judge's is revealed — then persists every check and prints an agreement report. Real output from the current judge — Claude Haiku 4.5, after the fixes described in [Debugging](#debugging-the-judge-that-wasnt-thinking) — over a fresh 11-task × 2-candidate run with **every response blind-checked**:
+The platform ships a spot-check CLI that samples judged responses and asks a human to score them **blind** — you commit your score before the judge's is revealed — then persists every check and prints an agreement report. The dashboard's **Spot Check** tab renders the same report live from the stored checks (same aggregation code as the CLI, so the two can't disagree), filterable by run and defaulting to the newest checked run so the headline always describes the current judge. Real output from the current judge — Claude Haiku 4.5, after the fixes described in [Debugging](#debugging-the-judge-that-wasnt-thinking) — over a fresh 11-task × 2-candidate run with **every response blind-checked**:
 
 ```
 Per criterion:
@@ -136,3 +136,5 @@ Run a comparison from the dashboard (**Eval Runs → ＋ New comparison run**), 
 pnpm --filter @llm-eval/api spotcheck --n 10   # blind-score a sample in your terminal
 pnpm --filter @llm-eval/api spotcheck --report # aggregate agreement over all stored checks
 ```
+
+Your stored checks then show up in the dashboard's **Spot Check** tab as a live agreement report — KPI tiles plus per-criterion and per-judge tables, filterable per run.
