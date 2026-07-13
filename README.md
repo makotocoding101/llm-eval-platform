@@ -60,35 +60,33 @@ packages/shared Enums + zod DTOs shared by api and web
 
 ## Validation: does the judge agree with a human?
 
-The platform ships a spot-check CLI that samples judged responses and asks a human to score them **blind** — you commit your score before the judge's is revealed — then persists every check and prints an agreement report. Real output over all stored checks to date:
+The platform ships a spot-check CLI that samples judged responses and asks a human to score them **blind** — you commit your score before the judge's is revealed — then persists every check and prints an agreement report. Real output from the current judge — Claude Haiku 4.5, after the fixes described in [Debugging](#debugging-the-judge-that-wasnt-thinking) — over a fresh 11-task × 2-candidate run with **every response blind-checked**:
 
 ```
 Per criterion:
-  accuracy                     n=30   exact 77%   within-1 80%   mean|diff| 0.77  bias +0.30
-  helpfulness                  n=30   exact 80%   within-1 90%   mean|diff| 0.37  bias +0.03
-  coherence                    n=30   exact 87%   within-1 90%   mean|diff| 0.37  bias +0.30
-  instruction compliance       n=25   exact 80%   within-1 88%   mean|diff| 0.44  bias -0.04
-Per judge model:
-  gemini-2.5-flash             n=35   exact 94%   within-1 94%   mean|diff| 0.17  bias +0.06
-  claude-haiku-4-5-20251001    n=76   exact 79%   within-1 84%   mean|diff| 0.58  bias +0.13
-  claude-opus-4-8              n=4    exact 0%    within-1 75%   mean|diff| 1.50  bias +1.50
+  accuracy                     n=22   exact 95%   within-1 100%  mean|diff| 0.05  bias -0.05
+  helpfulness                  n=22   exact 86%   within-1 95%   mean|diff| 0.18  bias -0.18
+  coherence                    n=22   exact 91%   within-1 95%   mean|diff| 0.18  bias +0.09
+  instruction compliance       n=22   exact 77%   within-1 82%   mean|diff| 0.50  bias +0.05
 Overall:
-  all criteria                 n=115  exact 81%   within-1 87%   mean|diff| 0.49  bias +0.16
+  all criteria                 n=88   exact 88%   within-1 93%   mean|diff| 0.23  bias -0.02
   (bias = judge − human: positive means the judge is more lenient)
 ```
 
-> **⚠️ These numbers describe a degraded judge.** After they were collected, an audit of one contradictory score (see [Debugging](#debugging-the-judge-that-wasnt-thinking)) found that the judge had been scoring with **zero thinking tokens** — the Anthropic adapter silently stripped thinking whenever Haiku rejected adaptive mode — and that the output schema forced the score to be emitted *before* its justification. Both defects are fixed; a fresh blind validation pass against the repaired judge is in progress and will replace these numbers.
-
 Findings, honestly read:
 
-- **Claude Haiku 4.5 is the validated judge**: 79% exact / 84% within-1 agreement with blind human scoring over n=76, with near-zero aggregate bias (+0.13). It is the active judge on that evidence.
-- **Gemini-as-judge's 94% is not trustworthy.** Its checks landed disproportionately on trivial tasks ("What is the capital of France?") where different candidates return byte-identical answers — agreement is inflated by items nobody could grade differently. In the one clean blind session it appeared in, it managed 50% (n=4). Unvalidated either way.
-- **Accuracy is the judge's weak spot.** It's the worst criterion in the pool (77% exact, mean |diff| 0.77). The initial blind session was starker: on hard tasks the judge ran **+1.6 lenient on accuracy, and every single disagreement was 2+ points in the lenient direction** — e.g. a fluent, confident timezone answer with the wrong day scored high. Meanwhile coherence agreement was perfect in that session and is the strongest criterion overall (87% exact).
-- **Opus 4.8 is unvalidated** (n=4, 0% exact, +1.5 lenient — a sample, not a verdict). It was initially the active judge by default capability assumption; it now sits disabled because paying ~6–12× per call (adaptive thinking bills as output tokens) for an *unvalidated* judge over a *validated* one is exactly the intuition-over-data habit this project exists to kill.
+- **88% exact / 93% within-1, with essentially zero aggregate bias (−0.02).** The judge is neither systematically lenient nor harsh; the residual disagreement is scatter, not drift.
+- **Accuracy is now the judge's strongest criterion** (95% exact, 100% within-1, mean |diff| 0.05). Before the fixes it was the weakest — see below.
+- **Instruction compliance is the current weak spot** (77% exact, 82% within-1) — but with near-zero bias (+0.05), it reads as genuine judgment calls on partially-followed instructions rather than a systematic failure mode.
+- **Scope: one reviewer, one run** (22 responses × 4 criteria). Directional evidence, not a benchmark.
+
+### The numbers these replaced
+
+An earlier validation pass (n=115, 81% exact overall; n=76 / 79% exact for Haiku) was measured against a **silently degraded judge**: the adapter had stripped extended thinking from every judge call — Haiku was scoring with zero thinking tokens — and the output schema forced the score to be emitted before its justification. The full story is in [Debugging](#debugging-the-judge-that-wasnt-thinking). That pass flagged accuracy as the judge's worst criterion (77% exact, mean |diff| 0.77, systematically lenient on fluent-but-wrong answers). Same judge model, same task set, same reviewer after the fix: accuracy is the best criterion in the pool. The judge didn't get smarter — it started reasoning before scoring. (The old pass also contained n=35 Gemini-as-judge checks whose 94% agreement was inflated by trivial-task duplicates, and an n=4 Opus sample — both unvalidated; see [Limitations](#limitations--future-work).)
 
 ### What that means
 
-The judge is reliable for **style-level criteria** — coherence, helpfulness, instruction compliance — and systematically unreliable at **verifying facts it cannot check**. An LLM judge rewards fluent-but-wrong answers on accuracy, because confidence reads as correctness. Practical consequence: accuracy scoring needs grounding (a reference-answer comparison in the judge prompt), not free judgment. Tasks here already store an expected-answer description; wiring it into the accuracy criterion is the highest-value next change.
+A judge that reasons before committing to a score agrees with a blind human at 88% exact on this task set, with no leniency drift. The pre-fix failure mode — confidence reads as correctness, so fluent-but-wrong answers scored high on accuracy — did not recur in the fresh sample. Reference-grounding the accuracy criterion (tasks already store an expected-answer description) is still the right hardening against facts the judge can't verify, but it's now an improvement, not triage.
 
 ## Debugging: the judge that wasn't thinking
 
@@ -99,13 +97,13 @@ Pulling the stored score row ruled out a parsing bug — the database held exact
 1. **The output schema listed `score` before `reasoning`.** Structured-output models fill JSON properties in schema order, so the judge committed its verdict token before writing a word of justification. The "reasoning" was post-hoc rationalization — free to disagree with the number it was supposedly explaining.
 2. **The judge wasn't thinking at all.** Haiku 4.5 rejects adaptive thinking with a 400, and the adapter's fallback deleted thinking outright instead of downgrading it. Every judge call ran with zero thinking tokens, producing snap verdicts with a tell-tale bimodal score distribution (mostly 5s and 1s, little in between).
 
-Both are fixed: the schema now orders `reasoning` before `score`, and the adapter steps down per model — adaptive → budget-style thinking → none — learning each model's support from the API's 400s rather than a hand-maintained capability table. Verified live: the response that scored 1/5 three times in a row now scores 5/5, with real thinking (~350 tokens) behind every judge call.
+Both are fixed: the schema now orders `reasoning` before `score`, and the adapter steps down per model — adaptive → budget-style thinking → none — learning each model's support from the API's 400s rather than a hand-maintained capability table. Verified live: the response that scored 1/5 three times in a row now scores 5/5, with real thinking (~350 tokens) behind every judge call. The measurable payoff is in [Validation](#validation-does-the-judge-agree-with-a-human): a full blind re-validation moved overall exact agreement from 81% to 88% — and accuracy, previously the worst criterion, from 77% to 95%.
 
 **Why the `judge_calls` audit table stores raw output *before* parsing.** Diagnosing this required re-running the judge live, because the platform only kept parsed scores. That's the wrong dependency for an audit: live reproduction costs money, is nondeterministic, and the judge model may have changed since the suspect score was written. Every judge call now persists its verbatim output — plus token counts and latency — before the parser touches it, so output the parser would reject, clamp, or misread is preserved exactly as the model produced it. The insert is deliberately best-effort: a failed audit write warns and moves on, never sinks a valid judge call.
 
 ## Limitations & future work
 
-- **Small validation sample.** n=115 criterion-level checks from one reviewer. Directionally useful, not a benchmark.
+- **Small validation sample.** n=88 post-fix criterion checks from one reviewer over one run (the n=115 pre-fix history is kept for contrast). Directionally useful, not a benchmark.
 - **Easy tasks produce duplicate responses.** Trivial prompts make candidates converge on identical text, which both inflates agreement stats and shrinks the useful validation pool (the spot-check sampler now dedupes by response content, so repeats are never offered twice). Harder, more discriminating tasks are the fix.
 - **Opus as judge is an open question, not a closed one.** Haiku won on evidence available today. The plan is to re-enable Opus, accumulate blind checks against it, and let the agreement report decide whether the higher price buys better judgment — it may well be the better judge; nobody has shown it yet.
 - **Accuracy should be reference-grounded.** Pass the task's expected answer to the judge for the accuracy criterion instead of asking it to know the truth.
