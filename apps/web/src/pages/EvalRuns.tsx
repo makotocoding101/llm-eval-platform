@@ -7,6 +7,8 @@ export function EvalRuns() {
   const [runs, setRuns] = useState<EvalRun[] | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [naming, setNaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -22,7 +24,18 @@ export function EvalRuns() {
     void load();
   }, []);
 
-  async function newComparisonRun() {
+  // The button opens a naming form pre-filled with a timestamp default, so pressing
+  // Enter immediately reproduces the old one-click behavior.
+  function toggleNaming() {
+    if (naming) {
+      setNaming(false);
+      return;
+    }
+    setNameDraft(`Comparison ${new Date().toLocaleString()}`);
+    setNaming(true);
+  }
+
+  async function newComparisonRun(name: string) {
     setCreating(true);
     setError(null);
     try {
@@ -43,12 +56,13 @@ export function EvalRuns() {
         throw new Error("Need ≥1 enabled candidate model, an enabled judge, a rubric, and ≥1 task.");
       }
       const { evalRun } = await api.createRun({
-        name: `Comparison ${new Date().toLocaleString()}`,
+        name,
         rubricId: rubric.id,
         judgeModelId: judge.id,
         taskIds: tasks.map((t) => t.id),
         modelIds: candidates.map((m) => m.id),
       });
+      setNaming(false);
       await load();
       setSelectedRunId(evalRun.id);
     } catch (e) {
@@ -80,7 +94,7 @@ export function EvalRuns() {
             Refresh
           </button>
           <button
-            onClick={newComparisonRun}
+            onClick={toggleNaming}
             disabled={creating}
             className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-40"
           >
@@ -88,6 +102,46 @@ export function EvalRuns() {
           </button>
         </div>
       </div>
+
+      {naming && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const name = nameDraft.trim();
+            if (name) void newComparisonRun(name);
+          }}
+          className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl border border-white/[0.06] bg-card px-5 py-4 shadow-lg shadow-black/20"
+        >
+          <label htmlFor="run-name" className="text-sm text-zinc-400">
+            Run name
+          </label>
+          <input
+            id="run-name"
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && setNaming(false)}
+            disabled={creating}
+            className="min-w-64 flex-1 rounded-full border border-white/10 bg-transparent px-4 py-2 text-sm text-zinc-100 focus:border-accent/60 focus:outline-none disabled:opacity-40"
+          />
+          <button
+            type="submit"
+            disabled={creating || nameDraft.trim().length === 0}
+            className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-40"
+          >
+            {creating ? "Starting…" : "Start run"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setNaming(false)}
+            disabled={creating}
+            className="rounded-full border border-white/10 px-5 py-2 text-sm text-zinc-400 transition-colors hover:border-white/20 hover:text-zinc-100 disabled:opacity-40"
+          >
+            Cancel
+          </button>
+        </form>
+      )}
 
       {error && <p className="mt-6 text-sm text-red-400">{error}</p>}
       {!runs && !error && <p className="mt-8 text-sm text-zinc-500">Loading…</p>}
