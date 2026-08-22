@@ -1,5 +1,8 @@
 // Minimal typed fetch client for the dashboard.
-const BASE = "/api";
+// Prod: point VITE_API_URL at the deployed API, including the /api prefix the
+// routes are registered under (e.g. https://llm-eval-api.onrender.com/api).
+// Dev: unset, so requests stay relative and the Vite proxy forwards them.
+const BASE = (import.meta.env.VITE_API_URL ?? "/api").replace(/\/$/, "");
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`);
