@@ -59,9 +59,15 @@ describe("toGeminiSchema", () => {
     const gemini = toGeminiSchema(jsonSchema);
     expect(gemini.type).toBe("OBJECT");
     expect(JSON.stringify(gemini)).not.toContain("additionalProperties");
-    expect(JSON.stringify(gemini)).toContain('"INTEGER"');
-    expect(JSON.stringify(gemini)).not.toContain('"enum"');
-    expect(JSON.stringify(gemini)).toContain('"minimum":1');
-    expect(JSON.stringify(gemini)).toContain('"maximum":5');
+
+    type Node = Record<string, unknown>;
+    const scores = (gemini.properties as Record<string, Node>).scores as Node;
+    const itemProps = (scores.items as Node).properties as Record<string, Node>;
+
+    expect(itemProps.score).toEqual({ type: "INTEGER", minimum: 1, maximum: 5 });
+
+    // The criterion enum is strings, which Gemini accepts, so it survives untouched —
+    // that is what keeps the judge from restyling a rubric name in the first place.
+    expect(itemProps.criterion).toEqual({ type: "STRING", enum: ["accuracy"] });
   });
 });

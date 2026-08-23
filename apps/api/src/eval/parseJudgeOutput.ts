@@ -53,6 +53,22 @@ interface RawJudgeScore {
 const REFUSAL_PATTERN =
   /\b(i can(?:no|')t|i cannot|i'm unable|i am unable|i won't|i will not|as an ai|i must decline|refuse)\b/i;
 
+/**
+ * Fold the cosmetic differences a judge introduces when it restyles a criterion name.
+ *
+ * Judges occasionally return a rubric name in JSON-identifier form —
+ * "instruction_compliance" for "instruction compliance" — and the score attached to it
+ * is perfectly good. Matching on this form keeps that score instead of discarding it
+ * over punctuation the judge was never constrained to preserve.
+ */
+export function normalizeCriterionName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[_\-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function parseJudgeOutput(text: string, criteria: ParseCriterion[]): ParsedJudgeOutput {
   const snippet = text.slice(0, 160);
 
@@ -75,14 +91,25 @@ export function parseJudgeOutput(text: string, criteria: ParseCriterion[]): Pars
     return { fatal: "no_scores", fatalDetail: snippet, rows: [], issues: [] };
   }
 
-  const byName = new Map(criteria.map((c) => [c.name.toLowerCase(), c]));
+  const byExactName = new Map(criteria.map((c) => [c.name.toLowerCase(), c]));
+  // Fallback lookup for judges that restyle the name (see normalizeCriterionName).
+  // A name that two criteria both normalize to is ambiguous, so it maps to null and
+  // is treated as unknown rather than silently crediting the score to either one.
+  const byNormalizedName = new Map<string, ParseCriterion | null>();
+  for (const c of criteria) {
+    const key = normalizeCriterionName(c.name);
+    byNormalizedName.set(key, byNormalizedName.has(key) ? null : c);
+  }
   const rows: ParsedScoreRow[] = [];
   const issues: JudgeIssue[] = [];
   const seen = new Set<string>(); // criterion ids already scored (first occurrence wins)
 
   for (const raw of rawScores) {
     const name = typeof raw.criterion === "string" ? raw.criterion : "";
-    const criterion = byName.get(name.toLowerCase());
+    // Exact match wins; normalization is only a fallback, so a rubric that really does
+    // distinguish two similarly-spelled criteria keeps its exact behavior.
+    const criterion =
+      byExactName.get(name.toLowerCase()) ?? byNormalizedName.get(normalizeCriterionName(name)) ?? undefined;
     if (!criterion) {
       issues.push({ kind: "unknown_criterion", name: name || String(raw.criterion) });
       continue;

@@ -190,3 +190,96 @@ describe("parseJudgeOutput — partial failure (some criteria, not others)", () 
     expect(out.rows.map((r) => r.reasoning)).toEqual([null, null, "fine"]);
   });
 });
+
+describe("parseJudgeOutput — criterion name normalization", () => {
+  // A multi-word criterion is the case that actually bit us in production: the judge
+  // returned "instruction_compliance" for "instruction compliance" and the score was
+  // dropped, quietly shrinking the weighted-quality denominator for that response.
+  const multiWord: ParseCriterion[] = [
+    { id: "c-acc", name: "accuracy", scaleMin: 1, scaleMax: 5 },
+    { id: "c-ic", name: "instruction compliance", scaleMin: 1, scaleMax: 5 },
+  ];
+
+  it("matches a judge that returns the JSON-identifier form of the name", () => {
+    const out = parseJudgeOutput(
+      judgeJson([
+        { criterion: "accuracy", score: 4, reasoning: "Mostly right." },
+        { criterion: "instruction_compliance", score: 5, reasoning: "One sentence, as asked." },
+      ]),
+      multiWord,
+    );
+
+    expect(out.fatal).toBeNull();
+    expect(out.issues).toEqual([]);
+    expect(out.rows).toEqual([
+      { criterionId: "c-acc", criterionName: "accuracy", score: 4, reasoning: "Mostly right." },
+      {
+        criterionId: "c-ic",
+        // Stored under the rubric's own spelling, not the judge's.
+        criterionName: "instruction compliance",
+        score: 5,
+        reasoning: "One sentence, as asked.",
+      },
+    ]);
+  });
+
+  it.each([
+    ["instruction_compliance", "underscores"],
+    ["instruction-compliance", "hyphens"],
+    ["Instruction_Compliance", "mixed case with underscores"],
+    ["  instruction   compliance  ", "padded and doubled whitespace"],
+    ["INSTRUCTION COMPLIANCE", "upper case"],
+  ])("accepts %s (%s)", (name) => {
+    const out = parseJudgeOutput(judgeJson([{ criterion: name, score: 5, reasoning: "ok" }]), multiWord);
+
+    expect(out.rows).toHaveLength(1);
+    expect(out.rows[0]!.criterionId).toBe("c-ic");
+    expect(out.issues).toEqual([{ kind: "missing_criterion", criterion: "accuracy" }]);
+  });
+
+  it("still reports a genuinely invented criterion as unknown", () => {
+    const out = parseJudgeOutput(
+      judgeJson([{ criterion: "conciseness", score: 5, reasoning: "Short." }]),
+      multiWord,
+    );
+
+    expect(out.fatal).toBe("no_scores");
+    expect(out.issues).toContainEqual({ kind: "unknown_criterion", name: "conciseness" });
+  });
+
+  it("prefers an exact match over a normalized one", () => {
+    // A rubric that deliberately distinguishes the two spellings keeps its behavior.
+    const both: ParseCriterion[] = [
+      { id: "c-space", name: "instruction compliance", scaleMin: 1, scaleMax: 5 },
+      { id: "c-under", name: "instruction_compliance", scaleMin: 1, scaleMax: 5 },
+    ];
+    const out = parseJudgeOutput(
+      judgeJson([
+        { criterion: "instruction_compliance", score: 2, reasoning: "under" },
+        { criterion: "instruction compliance", score: 4, reasoning: "space" },
+      ]),
+      both,
+    );
+
+    expect(out.rows).toEqual([
+      { criterionId: "c-under", criterionName: "instruction_compliance", score: 2, reasoning: "under" },
+      { criterionId: "c-space", criterionName: "instruction compliance", score: 4, reasoning: "space" },
+    ]);
+  });
+
+  it("treats an ambiguous normalization as unknown rather than guessing", () => {
+    // Both rubric names fold to the same key, so a judge using a third spelling could
+    // be credited to either — report it instead of picking one.
+    const ambiguous: ParseCriterion[] = [
+      { id: "c-a", name: "instruction compliance", scaleMin: 1, scaleMax: 5 },
+      { id: "c-b", name: "instruction_compliance", scaleMin: 1, scaleMax: 5 },
+    ];
+    const out = parseJudgeOutput(
+      judgeJson([{ criterion: "Instruction-Compliance", score: 5, reasoning: "third spelling" }]),
+      ambiguous,
+    );
+
+    expect(out.fatal).toBe("no_scores");
+    expect(out.issues).toContainEqual({ kind: "unknown_criterion", name: "Instruction-Compliance" });
+  });
+});

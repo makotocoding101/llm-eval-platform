@@ -82,7 +82,11 @@ export function buildJudgePrompt(input: JudgePromptInput): {
           // so this forces the judge to write its justification before committing to a
           // number. Score-first produced snap verdicts contradicted by their own reasoning.
           properties: {
-            criterion: { type: "string" },
+            // Constrained to the rubric's own names so the judge cannot restyle them
+            // (e.g. "instruction_compliance"), which the parser would then have to
+            // recover from. parseJudgeOutput still normalizes, for judges or providers
+            // that do not honor the enum.
+            criterion: { type: "string", enum: criteria.map((c) => c.name) },
             reasoning: { type: "string" },
             score: scoreSchema,
           },
