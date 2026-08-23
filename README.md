@@ -128,7 +128,7 @@ pnpm --filter @llm-eval/db seed:hard   # optional: 6 harder tasks
 pnpm dev                    # API on :3001, dashboard on http://localhost:5173
 ```
 
-Environment variables (`.env`): `DATABASE_URL`, `PORT` (default 3001), `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, optional `JUDGE_TIMEOUT_MS`. Providers roll out in phases — models are seeded disabled except Gemini; flip `models.enabled` (and set one judge's `is_active_judge`) as you add keys.
+Environment variables (`.env`): `DATABASE_URL`, `PORT` (default 3001), `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, optional `JUDGE_TIMEOUT_MS`, and — deployed only — `WEB_ORIGIN` and `VITE_API_URL` (see [Deployment](#deployment)). Providers roll out in phases — models are seeded disabled except Gemini; flip `models.enabled` (and set one judge's `is_active_judge`) as you add keys.
 
 Run a comparison from the dashboard (**Eval Runs → ＋ New comparison run**), then validate the judge yourself:
 
@@ -136,3 +136,36 @@ Run a comparison from the dashboard (**Eval Runs → ＋ New comparison run**), 
 pnpm --filter @llm-eval/api spotcheck --n 10   # blind-score a sample in your terminal
 pnpm --filter @llm-eval/api spotcheck --report # aggregate agreement over all stored checks
 ```
+
+## Deployment
+
+The two halves deploy separately: the API is a long-lived Node process, the dashboard is static files. Both read their cross-origin wiring from env vars, so nothing is hardcoded to a host.
+
+**Database.** Point `DATABASE_URL` at a hosted Postgres (Neon works, and its connection string is drop-in), then apply the schema and seed it once:
+
+```bash
+DATABASE_URL=<hosted-url> pnpm db:migrate
+DATABASE_URL=<hosted-url> pnpm db:seed
+```
+
+**API.** Any Node host that runs a persistent process — evals take minutes, so serverless functions will time out mid-run.
+
+| Setting | Value |
+| --- | --- |
+| Build | `pnpm install` |
+| Start | `pnpm --filter @llm-eval/api start` |
+| Env | `DATABASE_URL`, provider keys, `WEB_ORIGIN` |
+
+`PORT` is injected by most hosts; the server already binds `0.0.0.0`. Set `WEB_ORIGIN` to the dashboard's deployed origin (comma-separated if more than one) — without it the API accepts cross-origin calls from anywhere, which on a public host means any page can start runs against your provider keys. `GET /health` is there for the platform's health check.
+
+**Dashboard.** Any static host:
+
+| Setting | Value |
+| --- | --- |
+| Build | `pnpm install && pnpm --filter @llm-eval/web build` |
+| Output | `apps/web/dist` |
+| Env | `VITE_API_URL` |
+
+`VITE_API_URL` must include the `/api` prefix the routes are registered under — `https://your-api.example.com/api`. It is read at build time, not runtime, so changing it means rebuilding.
+
+The two origins have to agree: whatever host serves the dashboard belongs in the API's `WEB_ORIGIN`, and the API's URL belongs in the dashboard's `VITE_API_URL`. A dashboard that loads but shows no data is almost always those two disagreeing — check the browser console for a CORS error before suspecting the database.
