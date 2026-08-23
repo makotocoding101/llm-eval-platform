@@ -14,8 +14,17 @@ const db = createDb(env.DATABASE_URL);
 
 const app = Fastify({ logger: true });
 
+// Deployed: only the dashboard's own origin may call the API, so a stray page
+// can't POST /api/eval-runs and spend the configured provider keys. Unset
+// locally, where the Vite proxy makes requests same-origin anyway.
+const allowedOrigins = env.WEB_ORIGIN?.split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 try {
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    origin: allowedOrigins?.length ? allowedOrigins : true,
+  });
 
   app.get("/health", async () => ({ ok: true }));
   registerRoutes(app, db);
