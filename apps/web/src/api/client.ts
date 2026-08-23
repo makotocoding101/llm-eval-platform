@@ -4,18 +4,81 @@
 // Dev: unset, so requests stay relative and the Vite proxy forwards them.
 const BASE = (import.meta.env.VITE_API_URL ?? "/api").replace(/\/$/, "");
 
+// Free-tier hosting spins the API down when idle, and while it boots the edge proxy
+// answers on its behalf with 502/503. The first request of a visit therefore fails
+// for a reason that resolves itself within about a minute. Retrying keeps the
+// request pending instead of surfacing a red error, which lets the cold-start
+// loading state (see useColdStart) explain the wait.
+const RETRY_WINDOW_MS = 60_000;
+const RETRY_INITIAL_MS = 500;
+const RETRY_MAX_MS = 4_000;
+
+/** Edge responses that mean the service was not reachable, so nothing ran. */
+const NOT_YET_UP = new Set([502, 503]);
+/** May mean the app received the request and timed out — only safe to repeat for reads. */
+const GATEWAY_TIMEOUT = 504;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Fetch, retrying for as long as the service still looks like it is booting.
+ *
+ * `idempotent` widens what counts as retryable. A read can be repeated whatever went
+ * wrong, so it also retries gateway timeouts and outright network failures. A write
+ * retries only when the status proves the request never reached the app: repeating
+ * an ambiguous POST would start a second eval run and spend real provider credit.
+ */
+async function request(
+  url: string,
+  init: RequestInit | undefined,
+  idempotent: boolean,
+): Promise<Response> {
+  const deadline = Date.now() + RETRY_WINDOW_MS;
+  let delay = RETRY_INITIAL_MS;
+
+  // Sleeps until the next attempt, or reports that the budget is spent. Never sleeps
+  // past the deadline, so the total wait stays within the window.
+  const waitForRetry = async (): Promise<boolean> => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return false;
+    await sleep(Math.min(delay, remaining));
+    delay = Math.min(delay * 2, RETRY_MAX_MS);
+    return true;
+  };
+
+  for (;;) {
+    let res: Response;
+    try {
+      res = await fetch(url, init);
+    } catch (err) {
+      // Connection refused or a DNS blip while the service comes up.
+      if (idempotent && (await waitForRetry())) continue;
+      throw err;
+    }
+
+    const booting = NOT_YET_UP.has(res.status) || (idempotent && res.status === GATEWAY_TIMEOUT);
+    // Budget spent: fall through and let the caller surface the real status.
+    if (booting && (await waitForRetry())) continue;
+    return res;
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
+  const res = await request(`${BASE}${path}`, undefined, true);
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
   return (await res.json()) as T;
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await request(
+    `${BASE}${path}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    false,
+  );
   if (!res.ok) throw new Error(`POST ${path} failed: ${res.status} ${await res.text()}`);
   return (await res.json()) as T;
 }

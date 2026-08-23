@@ -17,6 +17,7 @@
     "db:migrate": "pnpm --filter @llm-eval/db migrate",
     "db:seed": "pnpm --filter @llm-eval/db seed",
     "db:studio": "pnpm --filter @llm-eval/db studio",
+    "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
