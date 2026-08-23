@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type EvalRun } from "../api/client";
+import { Loading } from "../components/Loading";
 import { StatusBadge, runStatus } from "../components/StatusBadge";
 import { RunDetail } from "./RunDetail";
 
@@ -144,7 +145,7 @@ export function EvalRuns() {
       )}
 
       {error && <p className="mt-6 text-sm text-red-400">{error}</p>}
-      {!runs && !error && <p className="mt-8 text-sm text-zinc-500">Loading…</p>}
+      {!runs && !error && <Loading />}
 
       {runs && runs.length === 0 && (
         <div className="mt-8 rounded-2xl border border-dashed border-white/10 p-12 text-center text-sm text-zinc-500">

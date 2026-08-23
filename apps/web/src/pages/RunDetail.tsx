@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type EvalRunDetail, type Execution } from "../api/client";
+import { Loading } from "../components/Loading";
 import { StatusBadge, executionStatus, runStatus } from "../components/StatusBadge";
 
 function fmt(n: string | null): string {
@@ -129,7 +130,7 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
   }, [runId]);
 
   if (error) return <p className="text-sm text-red-400">{error}</p>;
-  if (!run) return <p className="text-sm text-zinc-500">Loading…</p>;
+  if (!run) return <Loading className="" />;
 
   const inFlight = run.status === "pending" || run.status === "running";
 

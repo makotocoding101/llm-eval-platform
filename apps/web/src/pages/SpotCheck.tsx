@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type AgreementReport, type AgreementStats } from "../api/client";
+import { Loading } from "../components/Loading";
 
 const flags: Array<[string, string]> = [
   ["--n 10", "sample size (default 10)"],
@@ -129,7 +130,7 @@ export function SpotCheck() {
       </p>
 
       {error && <p className="mt-6 text-sm text-red-400">{error}</p>}
-      {!report && !error && <p className="mt-8 text-sm text-zinc-500">Loading…</p>}
+      {!report && !error && <Loading />}
 
       {report && !overall && (
         <div className="mt-8 space-y-8">

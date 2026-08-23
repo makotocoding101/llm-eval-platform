@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type Task } from "../api/client";
+import { Loading } from "../components/Loading";
 
 // Read-only for now: tasks are seeded via the API; an editing UI can come later.
 export function Tasks() {
@@ -18,7 +19,7 @@ export function Tasks() {
       </p>
 
       {error && <p className="mt-6 text-sm text-red-400">{error}</p>}
-      {!tasks && !error && <p className="mt-8 text-sm text-zinc-500">Loading…</p>}
+      {!tasks && !error && <Loading />}
 
       {tasks && tasks.length === 0 && (
         <div className="mt-8 rounded-2xl border border-dashed border-white/10 p-12 text-center text-sm text-zinc-500">

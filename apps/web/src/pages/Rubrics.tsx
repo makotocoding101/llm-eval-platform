@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type Rubric } from "../api/client";
+import { Loading } from "../components/Loading";
 
 // Read-only for now: rubrics are seeded via the API; an editing UI can come later.
 export function Rubrics() {
@@ -18,7 +19,7 @@ export function Rubrics() {
       </p>
 
       {error && <p className="mt-6 text-sm text-red-400">{error}</p>}
-      {!rubrics && !error && <p className="mt-8 text-sm text-zinc-500">Loading…</p>}
+      {!rubrics && !error && <Loading />}
 
       {rubrics && rubrics.length === 0 && (
         <div className="mt-8 rounded-2xl border border-dashed border-white/10 p-12 text-center text-sm text-zinc-500">
