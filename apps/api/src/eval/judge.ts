@@ -1,5 +1,5 @@
 import { judgeCalls, responses, scores, type DB } from "@llm-eval/db";
-import type { ProviderSlug } from "@llm-eval/shared";
+import type { JudgeFailureReason, ProviderSlug } from "@llm-eval/shared";
 import { eq } from "drizzle-orm";
 import { getProvider } from "../providers/registry";
 import type { CompletionResult } from "../providers/types";
@@ -8,10 +8,39 @@ import { buildJudgePrompt } from "./prompts";
 
 const JUDGE_TIMEOUT_MS = Number(process.env.JUDGE_TIMEOUT_MS) || 60_000;
 
+/**
+ * Record one judge attempt. Best-effort by design: the audit trail must never sink a
+ * judge call that otherwise worked, and on the failure paths the caller is already
+ * throwing, so a failed insert here must not mask the real error.
+ */
+async function recordJudgeCall(
+  db: DB,
+  values: {
+    responseId: string;
+    judgeModelId: string;
+    rawOutput?: string | null;
+    failureReason?: JudgeFailureReason | null;
+    failureDetail?: string | null;
+    promptTokens?: number | null;
+    completionTokens?: number | null;
+    latencyMs?: number | null;
+  },
+): Promise<string | null> {
+  try {
+    const [row] = await db.insert(judgeCalls).values(values).returning({ id: judgeCalls.id });
+    return row?.id ?? null;
+  } catch (err) {
+    console.warn(`[judge] could not persist audit row for response ${values.responseId}:`, err);
+    return null;
+  }
+}
+
 /** Thrown when a judge call produced nothing storable. Carries the failure mode by name. */
 export class JudgeError extends Error {
   constructor(
-    readonly reason: "timeout" | "provider_error" | "malformed_json" | "refusal" | "no_scores",
+    // Same union the judge_calls.failure_reason enum is built from, so a new mode
+    // cannot be thrown without also being storable.
+    readonly reason: JudgeFailureReason,
     message: string,
   ) {
     super(message);
@@ -88,30 +117,48 @@ export async function judgeResponse(db: DB, responseId: string): Promise<JudgeOu
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const reason = /timed out/i.test(message) ? "timeout" : "provider_error";
+    // No output exists to store, so the reason is the whole record. Without this row a
+    // timeout and a rate limit are indistinguishable after the fact — the gap that made
+    // an earlier unjudged response impossible to diagnose without re-running the judge.
+    await recordJudgeCall(db, {
+      responseId,
+      judgeModelId: evalRun.judgeModel.id,
+      rawOutput: null,
+      failureReason: reason,
+      failureDetail: message,
+    });
     throw new JudgeError(reason, `judge call failed for response ${responseId}: ${message}`);
   }
 
   // Persist the verbatim judge output (with real token/latency numbers) before parsing,
   // so malformed or contradictory judge calls stay auditable without re-running the
   // judge. Best-effort: an audit-trail failure must not sink a good judge call.
-  try {
-    await db.insert(judgeCalls).values({
-      responseId,
-      judgeModelId: evalRun.judgeModel.id,
-      rawOutput: result.text,
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-      latencyMs: result.latencyMs,
-    });
-  } catch (err) {
-    console.warn(`[judge] could not persist raw output for response ${responseId}:`, err);
-  }
+  const judgeCallId = await recordJudgeCall(db, {
+    responseId,
+    judgeModelId: evalRun.judgeModel.id,
+    rawOutput: result.text,
+    promptTokens: result.promptTokens,
+    completionTokens: result.completionTokens,
+    latencyMs: result.latencyMs,
+  });
 
   const parsed = parseJudgeOutput(
     result.text,
     criteria.map((c) => ({ id: c.id, name: c.name, scaleMin: c.scaleMin, scaleMax: c.scaleMax })),
   );
   if (parsed.fatal) {
+    // The row already holds the raw output; mark why it yielded nothing, so a sweep for
+    // failures finds parse failures alongside provider ones.
+    if (judgeCallId) {
+      try {
+        await db
+          .update(judgeCalls)
+          .set({ failureReason: parsed.fatal, failureDetail: parsed.fatalDetail })
+          .where(eq(judgeCalls.id, judgeCallId));
+      } catch (err) {
+        console.warn(`[judge] could not record failure for response ${responseId}:`, err);
+      }
+    }
     throw new JudgeError(
       parsed.fatal,
       `judge output unusable (${parsed.fatal}) for response ${responseId}: ${parsed.fatalDetail}`,

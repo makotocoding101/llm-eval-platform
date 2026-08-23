@@ -15,6 +15,13 @@
       "when": 1783481680766,
       "tag": "0001_lame_wasp",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787522913098,
+      "tag": "0002_acoustic_lifeguard",
+      "breakpoints": true
     }
   ]
 }
