@@ -14,6 +14,10 @@ export function evalRunRoutes(app: FastifyInstance, db: DB) {
     const run = await db.query.evalRuns.findFirst({
       where: eq(evalRuns.id, id),
       with: {
+        // The full rubric, so the dashboard can tell a criterion the judge never scored
+        // from one that does not exist: a response's own scores cannot show what is
+        // absent, and a partial score is not comparable to a complete one.
+        rubric: { with: { criteria: true } },
         executions: {
           with: {
             model: true,

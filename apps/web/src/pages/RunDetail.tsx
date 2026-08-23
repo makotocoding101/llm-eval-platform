@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { api, type EvalRunDetail, type Execution } from "../api/client";
+import { api, type Criterion, type EvalRunDetail, type Execution } from "../api/client";
 import { Loading } from "../components/Loading";
 import { StatusBadge, executionStatus, runStatus } from "../components/StatusBadge";
+import { qualityState, topExecutionId } from "../lib/quality";
 
 function fmt(n: string | null): string {
   if (n == null) return "—";
@@ -19,8 +20,17 @@ function scoreColor(n: string | null): string {
   return "text-accent";
 }
 
-function ModelCard({ ex, isTop }: { ex: Execution; isTop: boolean }) {
+function ModelCard({
+  ex,
+  isTop,
+  rubric,
+}: {
+  ex: Execution;
+  isTop: boolean;
+  rubric: Criterion[];
+}) {
   const q = ex.response?.quality;
+  const quality = qualityState(ex, rubric);
   return (
     <div
       className={`flex min-w-[300px] flex-1 basis-80 flex-col rounded-2xl border bg-card p-6 shadow-lg shadow-black/20 ${
@@ -39,16 +49,37 @@ function ModelCard({ ex, isTop }: { ex: Execution; isTop: boolean }) {
 
       {ex.response && (
         <>
-          <div className="mt-5 flex items-baseline gap-2.5">
-            <span
-              className={`text-3xl font-bold tracking-tight tabular-nums ${scoreColor(q?.weightedScore ?? null)}`}
-            >
-              {fmt(q?.weightedScore ?? null)}
-            </span>
-            <span className="text-xs text-zinc-500">
-              weighted quality{q?.criteriaScored ? ` · ${q.criteriaScored} criteria` : ""}
-            </span>
-          </div>
+          {quality.kind === "not_judged" ? (
+            <div className="mt-5">
+              <span className="text-2xl font-bold tracking-tight text-zinc-500">Not judged</span>
+              <p className="mt-1 text-xs text-zinc-600">
+                no scores recorded — the judge call did not complete
+              </p>
+            </div>
+          ) : (
+            <div className="mt-5">
+              <div className="flex items-baseline gap-2.5">
+                {/* A partial score is deliberately denied the quality-band colors: they read
+                    as a grade, and this number is an average over a smaller denominator. */}
+                <span
+                  className={`text-3xl font-bold tracking-tight tabular-nums ${
+                    quality.kind === "complete" ? scoreColor(q?.weightedScore ?? null) : "text-zinc-500"
+                  }`}
+                >
+                  {fmt(q?.weightedScore ?? null)}
+                </span>
+                <span className="text-xs text-zinc-500">
+                  weighted quality · {quality.scored} of {quality.expected} criteria
+                </span>
+              </div>
+              {quality.kind === "partial" && (
+                <p className="mt-1.5 text-xs leading-relaxed text-amber-400">
+                  Partial — averaged over only the criteria that were scored, so it is not
+                  comparable to a fully judged response.
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="mt-4 max-h-60 overflow-y-auto rounded-xl border border-white/5 bg-inset px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-zinc-300">
             {ex.response.content}
@@ -74,6 +105,17 @@ function ModelCard({ ex, isTop }: { ex: Execution; isTop: boolean }) {
                   )}
                 </div>
               ))}
+
+            {quality.missing.map((c) => (
+              <div key={c.id} className="py-2.5 first:pt-0 last:pb-0">
+                <div className="flex items-baseline justify-between gap-4 text-[13px]">
+                  <span className="text-zinc-600">
+                    {c.name} <span className="text-zinc-700">· w{c.weight}</span>
+                  </span>
+                  <span className="text-xs text-zinc-600 italic">not scored</span>
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="mt-auto pt-5 font-mono text-[11px] text-zinc-600">
@@ -84,17 +126,6 @@ function ModelCard({ ex, isTop }: { ex: Execution; isTop: boolean }) {
       )}
     </div>
   );
-}
-
-/** The strict winner's execution id for a task group — none on ties or <2 scored models. */
-function topExecutionId(execs: Execution[]): string | null {
-  const scored = execs
-    .map((ex) => ({ id: ex.id, score: Number(ex.response?.quality?.weightedScore) }))
-    .filter((s) => Number.isFinite(s.score));
-  if (scored.length < 2) return null;
-  const max = Math.max(...scored.map((s) => s.score));
-  const winners = scored.filter((s) => s.score === max);
-  return winners.length === 1 ? winners[0]!.id : null;
 }
 
 export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void }) {
@@ -165,7 +196,7 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
       <div className="mt-12 space-y-14">
         {[...byTask.values()].map((execs) => {
           const task = execs[0]!.task;
-          const topId = topExecutionId(execs);
+          const topId = topExecutionId(execs, run.rubric.criteria);
           return (
             <section key={task.id}>
               <div className="text-[11px] font-medium tracking-[0.14em] text-zinc-500 uppercase">
@@ -179,7 +210,7 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
                   .slice()
                   .sort((a, b) => a.model.displayName.localeCompare(b.model.displayName))
                   .map((ex) => (
-                    <ModelCard key={ex.id} ex={ex} isTop={ex.id === topId} />
+                    <ModelCard key={ex.id} ex={ex} isTop={ex.id === topId} rubric={run.rubric.criteria} />
                   ))}
               </div>
             </section>

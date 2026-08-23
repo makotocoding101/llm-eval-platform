@@ -166,6 +166,8 @@ export interface EvalRun {
 
 export interface EvalRunDetail extends EvalRun {
   executions: Execution[];
+  /** The run's full rubric — what each response was meant to be scored on. */
+  rubric: Rubric;
 }
 
 export interface AgreementStats {
