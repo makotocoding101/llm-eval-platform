@@ -11,7 +11,10 @@ WORKDIR /app
 # ── build ────────────────────────────────────────────────────────────────────
 # Manifests first, so a CSS tweak reuses the cached install layer.
 FROM base AS build
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+# tsconfig.base.json is required, not optional: apps/web/tsconfig.json extends it as
+# ../../tsconfig.base.json, and vite resolves that chain while transforming index.html.
+# Without it the build fails with `failed to resolve "extends"`.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY apps/api/package.json      apps/api/
 COPY apps/web/package.json      apps/web/
 COPY packages/db/package.json   packages/db/

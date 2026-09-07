@@ -26,7 +26,12 @@ WORKDIR /app
 # not need it: --frozen-lockfile verifies the lockfile against the whole workspace,
 # and a project present in the lockfile but missing on disk makes that check fail.
 FROM base AS manifests
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+# tsconfig.base.json rides along with the manifests: all four subprojects extend it
+# as ../../tsconfig.base.json, and a tsconfig whose `extends` target is missing is a
+# hard error in the toolchain rather than a warning. It lives in this layer so every
+# stage below inherits it — the cost is that editing it invalidates the install
+# cache, which is cheap for a file that changes about never.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY apps/api/package.json      apps/api/
 COPY apps/web/package.json      apps/web/
 COPY packages/db/package.json   packages/db/
