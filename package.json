@@ -11,7 +11,7 @@
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "dev:api": "pnpm --filter @llm-eval/api dev",
     "dev:web": "pnpm --filter @llm-eval/web dev",
-    "db:up": "docker compose up -d",
+    "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:generate": "pnpm --filter @llm-eval/db generate",
     "db:migrate": "pnpm --filter @llm-eval/db migrate",

@@ -1,3 +1,9 @@
+# Local full stack:  docker compose up --build   ->  dashboard at http://localhost:8080
+# Just the database:  pnpm db:up                  ->  what `pnpm dev` expects
+#
+# Day-to-day development stays outside Docker (`pnpm db:up` + `pnpm dev`), because
+# hot reload beats rebuilding an image. This file is for running the whole thing the
+# way it is deployed, and for having something CI can build.
 services:
   postgres:
     image: postgres:16
@@ -16,6 +22,62 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # Runs once and exits. Schema first, then seed — seed is idempotent (it bails if
+  # providers already exist), so `up` on an existing volume is a no-op rather than a
+  # duplicate-key failure.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: tools
+    command: sh -c "pnpm migrate && pnpm seed"
+    environment:
+      DATABASE_URL: postgres://eval:eval@postgres:5432/llm_eval
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    environment:
+      # Host is the service name, not localhost: inside the compose network each
+      # container has its own loopback, so localhost here would mean "this container".
+      DATABASE_URL: postgres://eval:eval@postgres:5432/llm_eval
+      PORT: 3001
+      # Passed through from your shell or the repo .env, defaulting to empty so the
+      # stack still starts without keys — the dashboard reads fine, only starting a
+      # run needs them. Keys stay out of the image; they arrive at container start.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # WEB_ORIGIN is deliberately unset: the dashboard reaches the API through
+      # Caddy's /api proxy, so every request is same-origin and CORS never applies.
+    ports:
+      # Published mainly so `curl localhost:3001/health` works while debugging; the
+      # dashboard does not use this path, it goes through web.
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      # Waits for the HEALTHCHECK in the API image, not merely for the container to
+      # exist, so the first page load does not race the server's startup.
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:

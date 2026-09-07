@@ -1,0 +1,25 @@
+# Serves the built dashboard and proxies the API, so the browser sees one origin.
+#
+# That single-origin arrangement is why the compose stack needs no CORS setup: the
+# API's WEB_ORIGIN only matters for cross-origin calls, and here there are none —
+# requests to /api leave the browser addressed to this server, not to the API.
+:80 {
+	encode gzip
+
+	# Must come before the file_server block: /api/* is not on disk, and try_files
+	# would otherwise answer it with index.html and a 200, turning a routing mistake
+	# into "the dashboard loads but every panel is empty".
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		root * /srv
+		# Single-page app: unknown paths render the app rather than 404ing. The
+		# dashboard currently switches tabs in component state, so nothing depends
+		# on this yet — it is here so adding real routes later does not break on
+		# refresh.
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Typecheck, unit tests and the dashboard build, run outside Docker so a failure
+  # points at the code rather than at the image.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm --filter @llm-eval/web build
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      # A broken image should fail the PR, not the deploy.
+      #
+      # Both build from the repo root: the pnpm workspace means neither app can be
+      # built from its own directory. `load: true` puts the API image into the local
+      # daemon so the next step can actually run it — the web image is only built,
+      # since nothing here exercises it.
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          target: runtime
+          push: false
+          load: true
+          tags: llm-eval-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          tags: llm-eval-web:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The container must actually come up and serve, not merely build.
+      #
+      # No database here on purpose. /health is answered without touching Postgres,
+      # so this checks the thing that breaks most often in an image — missing runtime
+      # dependencies, a bad CMD, a non-root user that cannot read its own files —
+      # rather than re-testing the query layer the unit tests already cover.
+      # DATABASE_URL still has to parse, since the server validates env before listen.
+      - name: Smoke the API image
+        run: |
+          docker run -d --name api -p 3001:3001 \
+            -e DATABASE_URL=postgres://eval:eval@127.0.0.1:5432/llm_eval \
+            llm-eval-api:ci
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:3001/health > /dev/null; then
+              echo "healthy"; curl -s http://localhost:3001/health; echo; exit 0
+            fi
+            sleep 1
+          done
+          echo "never became healthy"; docker logs api; exit 1
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs api || true

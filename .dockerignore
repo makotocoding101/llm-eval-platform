@@ -1,0 +1,33 @@
+# Both images build from the repo root, because pnpm workspace links mean the API
+# and the dashboard cannot be built from their own directories alone — they need the
+# lockfile, the workspace manifest, and packages/* as well.
+#
+# Everything listed here is excluded from the build context that gets sent to the
+# daemon. Keeping node_modules out is not just about speed: the local copy holds
+# Windows-resolved binaries (esbuild, pg), and copying those into a Linux image
+# produces a container that fails at runtime in confusing ways. Each image installs
+# its own dependencies for its own platform instead.
+node_modules
+**/node_modules
+
+# Build output is regenerated inside the image.
+dist
+**/dist
+coverage
+**/coverage
+
+# Secrets. DATABASE_URL and three provider API keys live here; an image layer is
+# forever and shipping one is how keys leak.
+.env
+.env.*
+!.env.example
+
+.git
+.github
+.gitignore
+*.log
+
+# Not needed to build or run anything.
+docs
+README.md
+**/*.md
