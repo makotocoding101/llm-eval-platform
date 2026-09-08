@@ -3,7 +3,7 @@ import { createEvalRunInput } from "@llm-eval/shared";
 import { desc, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { runEvalRun } from "../eval/runner";
-import { runRateLimit } from "../rateLimit";
+import { runRouteOptions } from "../rateLimit";
 
 export function evalRunRoutes(app: FastifyInstance, db: DB) {
   app.get("/api/eval-runs", async () => {
@@ -55,7 +55,7 @@ export function evalRunRoutes(app: FastifyInstance, db: DB) {
     };
   });
 
-  app.post("/api/eval-runs", { config: runRateLimit }, async (request, reply) => {
+  app.post("/api/eval-runs", runRouteOptions, async (request, reply) => {
     const parsed = createEvalRunInput.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send(parsed.error.flatten());
@@ -79,7 +79,7 @@ export function evalRunRoutes(app: FastifyInstance, db: DB) {
 
   // Re-run an existing run: retries errored executions and judges any response that is
   // missing scores (fully or partially). Idempotent — completed work is never redone.
-  app.post("/api/eval-runs/:id/rerun", { config: runRateLimit }, async (request, reply) => {
+  app.post("/api/eval-runs/:id/rerun", runRouteOptions, async (request, reply) => {
     const { id } = request.params as { id: string };
     const run = await db.query.evalRuns.findFirst({ where: eq(evalRuns.id, id) });
     if (!run) return reply.status(404).send({ error: "not found" });

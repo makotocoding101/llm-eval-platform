@@ -1,22 +1,24 @@
 import type { FastifyRequest } from "fastify";
 
 /**
- * Ceiling on how often one address may start an eval run.
+ * Optional ceiling on how often one address may start an eval run.
  *
- * The API has no authentication, and starting a run spends real provider credit —
- * on the seeded rubric that is 11 tasks x 2 candidates, plus a judge call for every
- * response. The public demo should stay clickable, so this is a ceiling rather than
- * a gate: a visitor gets to try it, nobody gets to hammer it.
+ * Off by default. A run costs about $0.14 in judge tokens — 22 Haiku calls over the
+ * seeded rubric — and organic traffic does not sit there clicking it, so capping the
+ * demo mostly risks turning a visitor away at the one moment they wanted to try it.
+ * Reads are never metered either way.
  *
- * Reads are deliberately unmetered. The dashboard polls a run every 2s while it
- * executes, so throttling GETs would break the page this is meant to protect.
+ * Set RUN_RATE_LIMIT to a number to turn it on. It is an env var rather than a code
+ * change so a live service under abuse can be capped without a deploy.
  */
-export const RUN_LIMIT_MAX = Number(process.env.RUN_RATE_LIMIT) || 3;
+export const RUN_LIMIT_MAX = Number(process.env.RUN_RATE_LIMIT) || 0;
 export const RUN_LIMIT_WINDOW = process.env.RUN_RATE_WINDOW ?? "1 hour";
 
+/** Whether a cap is configured at all. */
+export const runLimitEnabled = RUN_LIMIT_MAX > 0;
+
 export const rateLimitOptions = {
-  // Opt in per route instead of limiting everything: with `global: false` only the
-  // routes that carry a rateLimit config are counted.
+  // Nothing is metered unless a route opts in, which only happens when a cap is set.
   global: false,
 
   // Loopback is local development and the container health check, never a visitor.
@@ -37,7 +39,10 @@ export const rateLimitOptions = {
   }),
 };
 
-/** Attach to a route to meter it: `app.post(path, { config: runRateLimit }, handler)`. */
-export const runRateLimit = {
-  rateLimit: { max: RUN_LIMIT_MAX, timeWindow: RUN_LIMIT_WINDOW },
-};
+/**
+ * Route options for the endpoints that start a run. Empty — and therefore unmetered —
+ * unless RUN_RATE_LIMIT is set, so the routes read the same either way.
+ */
+export const runRouteOptions = runLimitEnabled
+  ? { config: { rateLimit: { max: RUN_LIMIT_MAX, timeWindow: RUN_LIMIT_WINDOW } } }
+  : {};
