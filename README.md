@@ -4,6 +4,8 @@ Pick an LLM provider with data instead of intuition: head-to-head evals on your 
 
 ![Dashboard — run detail](docs/dashboard.png)
 
+**Live API:** [`/health`](https://llm-eval-platform-ayp9.onrender.com/health) · [`/api/eval-runs`](https://llm-eval-platform-ayp9.onrender.com/api/eval-runs) — real data from the runs below. Free-tier hosting sleeps when idle, so the first request takes up to a minute ([why](#deployment)). The dashboard above runs locally; only the API is deployed.
+
 ## The problem
 
 "Which model should we use?" usually gets answered by anecdote: someone pastes a prompt into two chat UIs and eyeballs the output. That doesn't scale, doesn't persist, and quietly biases toward whichever answer *sounds* better. This platform turns the question into a pipeline: fixed tasks, weighted rubric, every candidate model answers everything, an independent judge scores every answer per criterion, and the aggregate quality score is computed in the database where it can't drift from the data.
