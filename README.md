@@ -4,7 +4,7 @@ Pick an LLM provider with data instead of intuition: head-to-head evals on your 
 
 ![Dashboard — run detail](docs/dashboard.png)
 
-**Live API:** [`/health`](https://llm-eval-platform-ayp9.onrender.com/health) · [`/api/eval-runs`](https://llm-eval-platform-ayp9.onrender.com/api/eval-runs) — real data from the runs below. Free-tier hosting sleeps when idle, so the first request takes up to a minute ([why](#deployment)). The dashboard above runs locally; only the API is deployed.
+**[Live dashboard →](https://llm-eval-platform-web.vercel.app)** — the screenshot above, on real data. Free-tier hosting sleeps when idle, so the first load waits up to a minute while the API wakes; the dashboard says so rather than spinning ([why](#deployment)). The API directly: [`/health`](https://llm-eval-platform-ayp9.onrender.com/health) · [`/api/eval-runs`](https://llm-eval-platform-ayp9.onrender.com/api/eval-runs).
 
 ## The problem
 
